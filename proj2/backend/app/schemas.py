@@ -256,6 +256,38 @@ class ReviewOut(ReviewBase):
     class Config:
         from_attributes = True
 
+# STAFF MANAGEMENT
+class StaffAssignmentCreate(BaseModel):
+    """Schema for creating a new staff assignment."""
+    user_id: int
+    cafe_id: int
+    role: Optional[Role] = Role.STAFF
+
+class StaffAssignByEmail(BaseModel):
+    """Schema for assigning staff by email address."""
+    email: str
+    cafe_id: int
+    role: Optional[Role] = Role.STAFF
+
+class StaffAssignmentOut(BaseModel):
+    """Schema for staff assignment data returned in API responses."""
+    id: int
+    user_id: int
+    cafe_id: int
+    role: Role
+    class Config:
+        from_attributes = True
+
+class StaffMemberOut(BaseModel):
+    """Schema for staff member details including user information."""
+    id: int  # Assignment ID
+    user_id: int
+    cafe_id: int
+    name: str
+    email: str
+    role: Role
+    is_active: bool
+
 class OrderSummaryOut(BaseModel):
     """Schema for detailed order summary including items and driver information."""
     id: int

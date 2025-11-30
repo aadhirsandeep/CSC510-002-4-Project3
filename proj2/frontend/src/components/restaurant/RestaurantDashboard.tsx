@@ -29,10 +29,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { Calendar, Bell, ChefHat, DollarSign, Package, TrendingUp, Clock, Users } from 'lucide-react';
 import { Order, OrderStatus, User } from '../../api/types';
 import { ordersApi } from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
+import StaffManagement from './StaffManagement';
+import StaffOrdersView from '../staff/StaffOrdersView';
 
 interface RestaurantDashboardProps {
   user: User;
@@ -170,6 +173,24 @@ useEffect(() => {
           Welcome back, {user?.name}! Here's what's happening today.
         </p>
       </div>
+
+      {/* Tabs for different sections */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className={`grid w-full ${user?.role === 'OWNER' ? 'grid-cols-5' : 'grid-cols-4'}`}>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+          {user?.role === 'OWNER' && (
+            <TabsTrigger value="staff">
+              <Users className="h-4 w-4 mr-2" />
+              Staff
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="menu">Menu</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+
+        {/* Overview Tab - Existing Dashboard Content */}
+        <TabsContent value="overview" className="space-y-6">
 
       {/* Stats Overview */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -342,6 +363,48 @@ useEffect(() => {
           </div> */}
         {/* </CardContent> */}
       {/* </Card> */}
+        </TabsContent>
+
+        {/* Orders Tab - Use StaffOrdersView */}
+        <TabsContent value="orders">
+          <StaffOrdersView />
+        </TabsContent>
+
+        {/* Staff Tab - Show StaffManagement */}
+        <TabsContent value="staff">
+          <StaffManagement user={user as any} />
+        </TabsContent>
+
+        {/* Menu Tab - Placeholder */}
+        <TabsContent value="menu">
+          <Card>
+            <CardHeader>
+              <CardTitle>Menu Management</CardTitle>
+              <CardDescription>Add, edit, or remove menu items</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/restaurant/menu">Go to Menu Management</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Analytics Tab - Placeholder */}
+        <TabsContent value="analytics">
+          <Card>
+            <CardHeader>
+              <CardTitle>Analytics & Reports</CardTitle>
+              <CardDescription>View your restaurant performance metrics</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/restaurant/analytics">View Full Analytics</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
