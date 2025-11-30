@@ -17,6 +17,7 @@ export * from './items';
 export * from './cart';
 export * from './orders';
 export * from './goals';
+export * from './staff';
 
 // Future API modules will be exported here
 // export * from './analytics';
@@ -31,3 +32,4 @@ export { goalsApi } from './goals';
 export {analyticsApi} from './analytics';
 export { paymentsApi } from './payments';
 export {driversApi} from './drivers';
+export { staffApi } from './staff';
