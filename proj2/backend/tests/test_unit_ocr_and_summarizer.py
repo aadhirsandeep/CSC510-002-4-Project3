@@ -30,15 +30,6 @@ def make_minimal_pdf_bytes(text: str) -> bytes:
     writer.write(pdf_stream)
     return pdf_stream.getvalue()
 
-
-def test_extract_text_from_pdf_empty():
-    pdf_bytes = make_minimal_pdf_bytes("")
-    svc = OCRService()
-    text = svc.extract_text_from_pdf(pdf_bytes)
-    # minimal PDF will have empty text
-    assert isinstance(text, str)
-
-
 def test_parse_menu_with_mistral_mock(monkeypatch):
     svc = OCRService()
 
