@@ -10,6 +10,7 @@
  */
 
 import { apiClient } from './client';
+import { CancelAndReassignResponse } from './types';
 
 export interface DriverLoginRequest {
   email: string;
@@ -55,6 +56,10 @@ export const driversApi = {
   async deliverOrder(driverId: number, orderId: number) {
   // Use the dedicated deliver endpoint (no body) to match backend pickup flow
   return apiClient.post<AssignedOrderOut>(`/drivers/${driverId}/orders/${orderId}/deliver`);
+  },
+
+  async rejectOrder(driverId: number, orderId: number) {
+    return apiClient.post<CancelAndReassignResponse>(`/drivers/${driverId}/orders/${orderId}/reject`);
   },
 
   // Location

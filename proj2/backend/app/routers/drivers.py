@@ -10,15 +10,15 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..schemas import DriverLoginRequest, Token, AssignedOrderOut, DriverLocationIn, DriverStatusUpdate, DriverLocationWithStatus, IdleDriverInfo
-from ..models import User, Order, OrderStatus, DriverLocation, DriverStatus, Role
+from ..schemas import DriverLoginRequest, Token, AssignedOrderOut, DriverLocationIn, DriverStatusUpdate, DriverLocationWithStatus, IdleDriverInfo, CancelAndReassignResponse
+from ..models import User, Order, OrderStatus, DriverLocation, DriverStatus, Role, Cafe
 from ..auth import verify_password, create_token
 from ..auth import hash_password
 from ..schemas import UserCreate, UserOut
 from ..deps import get_current_user
 from datetime import timedelta, datetime
 from ..config import settings
-from ..services.driver import update_driver_status_to_occupied, update_driver_status_to_idle, get_idle_drivers_with_locations
+from ..services.driver import update_driver_status_to_occupied, update_driver_status_to_idle, get_idle_drivers_with_locations, find_nearest_idle_driver
 
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
@@ -36,7 +36,7 @@ def driver_login(data: DriverLoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/register", response_model=UserOut)
 def driver_register(data: UserCreate, db: Session = Depends(get_db)):
-    """Register a new driver account (role preset to DRIVER)."""
+    """Register a new driver account (role preset to DRIVER) with default location."""
     # reuse user creation flow but set role to DRIVER
     if db.query(User).filter(User.email == data.email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -44,6 +44,19 @@ def driver_register(data: UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Create default location for new driver (set to IDLE at origin coordinates)
+    # In production, this should be updated when driver first logs in or sets their actual location
+    default_location = DriverLocation(
+        driver_id=user.id,
+        lat=0.0,  # Default coordinates - driver should update this
+        lng=0.0,
+        status=DriverStatus.IDLE,
+        timestamp=datetime.utcnow()
+    )
+    db.add(default_location)
+    db.commit()
+
     return user
 
 
@@ -171,11 +184,88 @@ def deliver_order(driver_id: int, order_id: int, db: Session = Depends(get_db), 
     db.add(order)
     db.commit()
     db.refresh(order)
-    
+
     # Driver becomes IDLE after delivery
     update_driver_status_to_idle(driver_id, db)
-    
+
     return order
+
+
+@router.post("/{driver_id}/orders/{order_id}/reject", response_model=CancelAndReassignResponse)
+def reject_order(driver_id: int, order_id: int, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
+    """
+    Allow driver to reject an order assigned to them before pickup.
+    The order will be automatically reassigned to another available driver.
+    Driver can only reject orders in ACCEPTED or READY status (not yet picked up).
+    """
+    # Verify permissions
+    if current.role != Role.DRIVER and current.role != Role.ADMIN:
+        raise HTTPException(status_code=403, detail="Insufficient role")
+    if current.role == Role.DRIVER and current.id != driver_id:
+        raise HTTPException(status_code=403, detail="Can only reject own orders")
+
+    # Get the order
+    order = db.query(Order).filter(Order.id == order_id, Order.driver_id == driver_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found or not assigned to this driver")
+
+    # Check order status - can only reject before pickup
+    if order.status not in [OrderStatus.ACCEPTED, OrderStatus.READY]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reject order in {order.status.value} status. Can only reject ACCEPTED or READY orders."
+        )
+
+    # Store previous driver info
+    previous_driver_id = driver_id
+    previous_driver = db.query(User).filter(User.id == driver_id).first()
+
+    # Set driver back to IDLE
+    update_driver_status_to_idle(driver_id, db)
+
+    # Remove driver assignment
+    order.driver_id = None
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    # Find new driver (excluding the one who rejected)
+    cafe = db.query(Cafe).filter(Cafe.id == order.cafe_id).first()
+    if not cafe:
+        raise HTTPException(status_code=404, detail="Cafe not found")
+
+    result = find_nearest_idle_driver(cafe.lat, cafe.lng, db, exclude_driver_id=previous_driver_id)
+
+    if not result:
+        # No other driver available - order remains unassigned
+        return CancelAndReassignResponse(
+            order_id=order.id,
+            previous_driver_id=previous_driver_id,
+            new_driver_id=None,
+            new_driver_email=None,
+            message="Order rejected successfully. No other drivers available - cafe staff must manually assign."
+        )
+
+    # Assign to new driver
+    new_driver, distance = result
+    new_driver_id = new_driver.id
+
+    order.driver_id = new_driver_id
+    db.add(order)
+    db.commit()
+
+    # Update new driver status to OCCUPIED
+    update_driver_status_to_occupied(new_driver_id, db)
+
+    db.refresh(order)
+
+    return CancelAndReassignResponse(
+        order_id=order.id,
+        previous_driver_id=previous_driver_id,
+        new_driver_id=new_driver_id,
+        new_driver_email=new_driver.email,
+        message="Order rejected and reassigned to another driver successfully."
+    )
 
 
 @router.post("/{driver_id}/orders/{order_id}/status", response_model=AssignedOrderOut)

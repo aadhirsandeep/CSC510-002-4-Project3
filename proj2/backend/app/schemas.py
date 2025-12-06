@@ -213,6 +213,14 @@ class AssignDriverRequest(BaseModel):
     """Schema for assigning a driver to an order (auto-assign if driver_id is None)."""
     driver_id: Optional[int] = None  # If None, auto-assign nearest driver
 
+class CancelAndReassignResponse(BaseModel):
+    """Schema for cancel and reassign order response."""
+    order_id: int
+    previous_driver_id: Optional[int]
+    new_driver_id: Optional[int]
+    new_driver_email: Optional[str]
+    message: str
+
 class IdleDriverInfo(BaseModel):
     """Schema for idle driver information."""
     driver_id: int
