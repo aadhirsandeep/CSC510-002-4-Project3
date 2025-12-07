@@ -50,6 +50,7 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./docs
+          force_orphan: true
 
   #     - name: Build MkDocs
   #       run: |
