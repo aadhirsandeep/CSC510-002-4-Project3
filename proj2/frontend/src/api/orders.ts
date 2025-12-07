@@ -10,7 +10,7 @@
  */
 
 import { apiClient } from './client';
-import { Order, PlaceOrderRequest, OrderStatus, OrderSummary, CancelAndReassignResponse } from './types';
+import { Order, PlaceOrderRequest, OrderStatus, OrderSummary, CancelAndReassignResponse, WaitTimeEstimate, SetPrepTimeRequest } from './types';
 
 // Orders API Functions
 export const ordersApi = {
@@ -68,8 +68,20 @@ export const ordersApi = {
     return apiClient.post<Order>(`/orders/${orderId}/status?new_status=${status}`, {});
   },
 
+  /**
+   * Get wait time estimate for an order
+   */
+  async getWaitTime(orderId: number): Promise<{ data?: WaitTimeEstimate; error?: string }> {
+    return apiClient.get<WaitTimeEstimate>(`/orders/${orderId}/wait-time`);
+  },
 
-
+  /**
+   * Set estimated preparation time for an order (Staff/Owner only)
+   */
+  async setPrepTime(orderId: number, prepMinutes: number): Promise<{ data?: Order; error?: string }> {
+    const body: SetPrepTimeRequest = { estimated_prep_minutes: prepMinutes };
+    return apiClient.patch<Order>(`/orders/${orderId}/prep-time`, body);
+  },
   
   /**
    * Get order tracking information
@@ -104,6 +116,8 @@ export const {
   cancelOrder,
   getCafeOrders,
   updateOrderStatus,
+  getWaitTime,
+  setPrepTime,
   trackOrder,
   cancelAndReassignDriver,
   retryDriverAssignment,

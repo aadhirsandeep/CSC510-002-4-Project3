@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
-from ..schemas import PlaceOrderRequest, OrderOut, AssignDriverRequest, OrderSummaryOut, CancelAndReassignResponse
+from ..schemas import PlaceOrderRequest, OrderOut, AssignDriverRequest, OrderSummaryOut, CancelAndReassignResponse, WaitTimeEstimate, SetPrepTimeRequest
 from ..models import Cart, CartItem, Item, Order, OrderItem, OrderStatus, User, Cafe
 from ..deps import get_current_user, require_cafe_staff_or_owner
 from ..services.driver import find_nearest_idle_driver, update_driver_status_to_occupied
+from ..services.wait_time import WaitTimeService
 import secrets
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -199,6 +200,12 @@ def update_status(
     Accepts new_status as:
     - Query parameter: ?new_status=ACCEPTED (from demo scripts)  
     - JSON body: "ACCEPTED" (as string directly from frontend) or {"new_status": "ACCEPTED"}
+    
+    Automatically sets timestamps for wait time tracking:
+    - ACCEPTED: sets prep_started_at
+    - READY: sets ready_at
+    - PICKED_UP: sets picked_up_at
+    - DELIVERED: sets delivered_at
     """
     # Determine which status value to use
     status_str = None
@@ -229,9 +236,25 @@ def update_status(
         OrderStatus.PENDING: {OrderStatus.ACCEPTED, OrderStatus.DECLINED},
         OrderStatus.ACCEPTED: {OrderStatus.READY, OrderStatus.CANCELLED},
         OrderStatus.READY: {OrderStatus.PICKED_UP},
+        OrderStatus.PICKED_UP: {OrderStatus.DELIVERED},
     }
     if order.status in valid_transitions and new_status_enum in valid_transitions[order.status]:
+        now = datetime.utcnow()
         order.status = new_status_enum
+        
+        # Set timestamps for wait time tracking
+        if new_status_enum == OrderStatus.ACCEPTED:
+            order.prep_started_at = now
+            # Set default prep time if not already set
+            if not order.estimated_prep_minutes:
+                order.estimated_prep_minutes = WaitTimeService.estimate_prep_time_from_items(order.id, db)
+        elif new_status_enum == OrderStatus.READY:
+            order.ready_at = now
+        elif new_status_enum == OrderStatus.PICKED_UP:
+            order.picked_up_at = now
+        elif new_status_enum == OrderStatus.DELIVERED:
+            order.delivered_at = now
+        
         db.add(order)
         db.commit()
         db.refresh(order)
@@ -316,6 +339,75 @@ def assign_driver(order_id: int, assignment: AssignDriverRequest = None, db: Ses
 
     return order
 
+
+# ============ Wait Time Tracking Endpoints ============
+
+@router.get("/{order_id}/wait-time", response_model=WaitTimeEstimate)
+def get_wait_time(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Get the current wait time estimate for an order.
+    
+    Returns estimated prep time, delivery time, and total wait time.
+    Updates dynamically based on order status and driver location.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check authorization: order owner, cafe staff/owner, driver, or admin
+    is_authorized = (
+        order.user_id == current.id or
+        order.driver_id == current.id or
+        current.role.value == "ADMIN"
+    )
+    
+    if not is_authorized:
+        try:
+            require_cafe_staff_or_owner(order.cafe_id, db, current)
+        except HTTPException:
+            raise HTTPException(status_code=403, detail="Not authorized to view this order's wait time")
+    
+    return WaitTimeService.get_wait_time_estimate(order, db)
+
+
+@router.patch("/{order_id}/prep-time", response_model=OrderOut)
+def set_order_prep_time(
+    order_id: int,
+    prep_data: SetPrepTimeRequest,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Set the estimated preparation time for an order.
+    
+    Only cafe staff/owners can set this, typically when accepting an order.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Only cafe staff/owners can set prep time
+    require_cafe_staff_or_owner(order.cafe_id, db, current)
+    
+    # Validate prep time
+    if prep_data.estimated_prep_minutes < 1:
+        raise HTTPException(status_code=400, detail="Prep time must be at least 1 minute")
+    if prep_data.estimated_prep_minutes > 120:
+        raise HTTPException(status_code=400, detail="Prep time cannot exceed 120 minutes")
+    
+    order.estimated_prep_minutes = prep_data.estimated_prep_minutes
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+    
+    return order
+
+
+# ============ Driver Assignment/Reassignment Endpoints ============
 
 @router.post("/{order_id}/retry-assignment", response_model=CancelAndReassignResponse)
 def retry_driver_assignment(
