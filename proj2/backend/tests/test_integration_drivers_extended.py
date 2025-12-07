@@ -31,7 +31,7 @@ def test_driver_register_and_location_and_status(client):
     assert r4.status_code == 200
 
 def test_driver_status_requires_location(client):
-    # register second driver but don't post location
+    # register second driver - now creates default location automatically
     r = client.post("/drivers/register", json={"email": "drv2@example.com", "name": "D2", "password": "drvpass2"})
     assert r.status_code == 200
     r2 = client.post("/drivers/login", json={"email": "drv2@example.com", "password": "drvpass2"})
@@ -40,5 +40,5 @@ def test_driver_status_requires_location(client):
 
     driver2_id = r.json()["id"]
     r3 = client.put(f"/drivers/{driver2_id}/status", json={"status": "OCCUPIED"}, headers=hdr)
-    # Without a posted location the endpoint should return 404
-    assert r3.status_code == 404
+    # Driver now has default location, so status update should succeed
+    assert r3.status_code == 200

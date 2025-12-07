@@ -10,6 +10,8 @@
 import json
 import asyncio
 from datetime import datetime
+import pytest
+import os
 
 import PyPDF2
 
@@ -31,6 +33,10 @@ def make_minimal_pdf_bytes(text: str) -> bytes:
     return pdf_stream.getvalue()
 
 
+@pytest.mark.skipif(
+    not os.getenv("MISTRAL_API_KEY") or os.getenv("MISTRAL_API_KEY") == "",
+    reason="Requires MISTRAL_API_KEY to be set"
+)
 def test_extract_text_from_pdf_empty():
     pdf_bytes = make_minimal_pdf_bytes("")
     svc = OCRService()
