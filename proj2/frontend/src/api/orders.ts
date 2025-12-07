@@ -10,7 +10,7 @@
  */
 
 import { apiClient } from './client';
-import { Order, PlaceOrderRequest, OrderStatus, OrderSummary, WaitTimeEstimate, SetPrepTimeRequest } from './types';
+import { Order, PlaceOrderRequest, OrderStatus, OrderSummary, CancelAndReassignResponse, WaitTimeEstimate, SetPrepTimeRequest } from './types';
 
 // Orders API Functions
 export const ordersApi = {
@@ -89,6 +89,22 @@ export const ordersApi = {
   async trackOrder(orderId: number): Promise<{ data?: any; error?: string }> {
     return apiClient.get(`/orders/${orderId}/track`);
   },
+
+  /**
+   * Cancel current driver assignment and reassign to another driver (Staff/Owner only)
+   */
+  async cancelAndReassignDriver(orderId: number): Promise<{ data?: CancelAndReassignResponse; error?: string }> {
+    return apiClient.post<CancelAndReassignResponse>(`/orders/${orderId}/cancel-and-reassign`, {});
+  },
+
+  /**
+   * Retry driver assignment - works for both unassigned and assigned orders (Staff/Owner only)
+   * - If no driver: Assigns nearest idle driver
+   * - If has driver: Reassigns to different driver
+   */
+  async retryDriverAssignment(orderId: number): Promise<{ data?: CancelAndReassignResponse; error?: string }> {
+    return apiClient.post<CancelAndReassignResponse>(`/orders/${orderId}/retry-assignment`, {});
+  },
 };
 
 // Export individual functions for convenience
@@ -103,5 +119,7 @@ export const {
   getWaitTime,
   setPrepTime,
   trackOrder,
+  cancelAndReassignDriver,
+  retryDriverAssignment,
 } = ordersApi;
 

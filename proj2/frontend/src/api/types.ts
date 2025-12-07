@@ -235,6 +235,14 @@ export interface OrderSummary {
 export interface PlaceOrderRequest {
   cafe_id: number;
 }
+
+export interface CancelAndReassignResponse {
+  order_id: number;
+  previous_driver_id: number | null;
+  new_driver_id: number | null;
+  new_driver_email: string | null;
+  message: string;
+}
 // Goal Types
 export interface CalorieGoal {
   id: number;

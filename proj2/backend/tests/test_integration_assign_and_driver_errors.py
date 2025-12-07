@@ -42,7 +42,7 @@ def test_assign_driver_auto_fails_when_no_idle(client):
 
 
 def test_driver_status_update_without_location_returns_404(client):
-    # register driver but do not post location
+    # register driver - now creates default location automatically
     rdrv = client.post('/drivers/register', json={"email": "drv_noloc@example.com", "name": "DNL", "password": "pwd"})
     assert rdrv.status_code == 200
     drv = rdrv.json()
@@ -50,6 +50,6 @@ def test_driver_status_update_without_location_returns_404(client):
     assert rlogin.status_code == 200
     drv_hdr = {"Authorization": f"Bearer {rlogin.json()['access_token']}"}
 
-    # attempt to update status without posting a location -> endpoint returns 404
+    # Driver now has default location, so status update should succeed
     r = client.put(f"/drivers/{drv['id']}/status", json={"status": "IDLE"}, headers=drv_hdr)
-    assert r.status_code == 404
+    assert r.status_code == 200

@@ -90,8 +90,8 @@ const OrderManagement: React.FC<OrderManagementProps> = ({ user }) => {
 
   // Fetch order summary details
   // Fetch order summary details
-const fetchOrderSummary = async (orderId: number) => {
-  if (orderSummaries.has(orderId)) return; // Already fetched
+const fetchOrderSummary = async (orderId: number, force: boolean = false) => {
+  if (!force && orderSummaries.has(orderId)) return; // Already fetched
 
   setLoadingSummaries(prev => new Set(prev).add(orderId));
 
@@ -179,6 +179,47 @@ const fetchOrderSummary = async (orderId: number) => {
       }
     } catch {
       toast.error('Failed to update status');
+    }
+  };
+
+  // Cancel and reassign driver
+  const handleCancelAndReassign = async (orderId: number) => {
+    try {
+      const { data, error } = await ordersApi.cancelAndReassignDriver(orderId);
+      if (error) {
+        toast.error(error);
+      } else if (data) {
+        toast.success(data.message);
+        // Refresh order summary to show new driver
+        setOrderSummaries(prev => {
+          const next = new Map(prev);
+          next.delete(orderId);
+          return next;
+        });
+        fetchOrderSummary(orderId);
+        // Refresh orders list
+        fetchOrders();
+      }
+    } catch {
+      toast.error('Failed to reassign driver');
+    }
+  };
+
+  // Retry driver assignment (works for both assigned and unassigned orders)
+  const handleRetryAssignment = async (orderId: number) => {
+    try {
+      const { data, error } = await ordersApi.retryDriverAssignment(orderId);
+      if (error) {
+        toast.error(error);
+      } else if (data) {
+        toast.success(data.message);
+        // Force refresh order summary to show new driver
+        fetchOrderSummary(orderId, true);
+        // Refresh orders list
+        fetchOrders();
+      }
+    } catch {
+      toast.error('Failed to assign/reassign driver');
     }
   };
 
@@ -355,11 +396,46 @@ const fetchOrderSummary = async (orderId: number) => {
                       </div>
 
                       {/* Driver info */}
-                      {summary.driver_info && (
+                      {summary.driver_info ? (
                         <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                          <h3 className="font-semibold mb-1 text-blue-900">Driver Assigned</h3>
-                          <p className="text-sm text-blue-700">{summary.driver_info.driver_email}</p>
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <h3 className="font-semibold mb-1 text-blue-900">Driver Assigned</h3>
+                              <p className="text-sm text-blue-700">{summary.driver_info.driver_email}</p>
+                            </div>
+                            {(order.status === 'ACCEPTED' || order.status === 'READY') && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 border-red-300 hover:bg-red-50"
+                                onClick={() => handleRetryAssignment(order.id)}
+                              >
+                                <XCircle className="h-4 w-4 mr-1" />
+                                Reassign
+                              </Button>
+                            )}
+                          </div>
                         </div>
+                      ) : (
+                        (order.status === 'ACCEPTED' || order.status === 'READY') && (
+                          <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h3 className="font-semibold mb-1 text-yellow-900">No Driver Assigned</h3>
+                                <p className="text-sm text-yellow-700">Click to find and assign a driver</p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                                onClick={() => handleRetryAssignment(order.id)}
+                              >
+                                <RefreshCw className="h-4 w-4 mr-1" />
+                                Assign Driver
+                              </Button>
+                            </div>
+                          </div>
+                        )
                       )}
 
                       {/* Order totals */}
