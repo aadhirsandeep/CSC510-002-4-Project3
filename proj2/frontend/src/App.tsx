@@ -79,7 +79,7 @@ export default function App() {
         )}
 
         {/* OWNER/STAFF ROUTES */}
-        {isAuthenticated && user?.role === 'OWNER' && (
+        {isAuthenticated && (user?.role === 'OWNER' || user?.role === 'STAFF') && (
           <>
             <Route path="/restaurant/dashboard" element={<RestaurantDashboard />} />
             <Route path="/restaurant/menu" element={<MenuManagement/>} />

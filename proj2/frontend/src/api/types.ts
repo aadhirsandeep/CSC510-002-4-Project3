@@ -19,7 +19,7 @@ export interface ApiResponse<T = any> {
 export interface LoginRequest {
   email: string;
   password: string;
-  role?: 'USER' | 'OWNER' | 'DRIVER' | 'ADMIN';
+  role?: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
 }
 
 export interface LoginResponse {
@@ -30,14 +30,14 @@ export interface LoginResponse {
 export interface TokenPayload {
   sub: string;
   uid: number;
-  role: 'USER' | 'OWNER' | 'DRIVER'; 
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
   exp: number;
 }
 export interface User {
   id: number;
   email: string;
   name: string;
-  role: 'USER' | 'OWNER' | 'DRIVER'; 
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
   is_active: boolean;
   cafe?: Cafe;
   height_cm?: number;
@@ -78,7 +78,7 @@ export interface RegisterRequest {
   email: string;
   name: string;
   password: string;
-  role: 'USER' | 'OWNER' | 'DRIVER'; // ✅ added role here for registration
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN'; // ✅ added role here for registration
   // Optional owner-specific fields
   cuisine?: string;
   address?: string;
@@ -279,4 +279,36 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   body?: any;
   requiresAuth?: boolean;
+}
+
+// Staff Management Types
+export type StaffRole = 'USER' | 'STAFF' | 'OWNER' | 'ADMIN';
+
+export interface StaffAssignmentCreate {
+  user_id: number;
+  cafe_id: number;
+  role?: StaffRole;
+}
+
+export interface StaffAssignByEmail {
+  email: string;
+  cafe_id: number;
+  role?: StaffRole;
+}
+
+export interface StaffAssignment {
+  id: number;
+  user_id: number;
+  cafe_id: number;
+  role: StaffRole;
+}
+
+export interface StaffMember {
+  id: number; // Assignment ID
+  user_id: number;
+  cafe_id: number;
+  name: string;
+  email: string;
+  role: StaffRole;
+  is_active: boolean;
 }

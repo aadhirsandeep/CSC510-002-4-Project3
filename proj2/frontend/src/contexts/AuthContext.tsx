@@ -83,18 +83,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const response = await apiClient.get<User>('/users/me');
             if (response.data) {
               let userData = response.data;
-            
-              if (userData.role === 'OWNER') {
+
+              if (userData.role === 'OWNER' || userData.role === 'STAFF') {
                 try {
                   const cafeRes = await apiClient.get<Cafe>('/cafes/mine');
                   if (cafeRes.data) {
                     userData = { ...userData, cafe: cafeRes.data };
                   }
                 } catch (e) {
-                  console.error('⚠️ Failed to load owner cafe:', e);
+                  console.error('⚠️ Failed to load cafe:', e);
                 }
               }
-            
+
               localStorage.setItem('user', JSON.stringify(userData));
               setState(prev => ({
                 ...prev,
@@ -156,12 +156,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   
         if (userResponse.data) {
           let userData = userResponse.data;
-  
-          // ✅ If owner, get their cafe
-          if (userData.role === 'OWNER') {
-            const cafeRes = await apiClient.get<Cafe>('/cafes/mine');
-            if (cafeRes.data) {
-              userData = { ...userData, cafe: cafeRes.data };
+
+          // ✅ If owner or staff, get their cafe
+          if (userData.role === 'OWNER' || userData.role === 'STAFF') {
+            try {
+              const cafeRes = await apiClient.get<Cafe>('/cafes/mine');
+              if (cafeRes.data) {
+                userData = { ...userData, cafe: cafeRes.data };
+              }
+            } catch (e) {
+              console.error('⚠️ Failed to load cafe for staff/owner:', e);
+              // Continue anyway - user can still log in
             }
           }
 

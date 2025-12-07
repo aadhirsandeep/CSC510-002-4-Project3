@@ -19,13 +19,27 @@ router = APIRouter(prefix="/cafes", tags=["cafes"])
 @router.get("/mine", response_model=CafeOut)
 def get_my_cafe(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles(Role.OWNER))
+    user: User = Depends(require_roles(Role.OWNER, Role.STAFF))
 ):
-    """Return the cafe owned by the logged-in owner."""
-    cafe = db.query(Cafe).filter(Cafe.owner_id == user.id, Cafe.active == True).first()
-    if not cafe:
-        raise HTTPException(status_code=404, detail="You have no cafe registered yet.")
-    return cafe
+    """Return the cafe owned by the logged-in owner or assigned to staff."""
+    if user.role == Role.OWNER:
+        # Owner gets their own cafe
+        cafe = db.query(Cafe).filter(Cafe.owner_id == user.id, Cafe.active == True).first()
+        if not cafe:
+            raise HTTPException(status_code=404, detail="You have no cafe registered yet.")
+        return cafe
+    elif user.role == Role.STAFF:
+        # Staff gets their assigned cafe
+        from ..models import StaffAssignment
+        assignment = db.query(StaffAssignment).filter(
+            StaffAssignment.user_id == user.id
+        ).first()
+        if not assignment:
+            raise HTTPException(status_code=404, detail="You are not assigned to any cafe yet.")
+        cafe = db.query(Cafe).filter(Cafe.id == assignment.cafe_id, Cafe.active == True).first()
+        if not cafe:
+            raise HTTPException(status_code=404, detail="Your assigned cafe is not active.")
+        return cafe
 
 @router.post("/", response_model=CafeOut)
 def create_cafe(data: CafeCreate, db: Session = Depends(get_db), owner: User = Depends(require_roles(Role.OWNER, Role.ADMIN))):
