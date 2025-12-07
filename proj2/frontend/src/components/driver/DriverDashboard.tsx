@@ -101,6 +101,24 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
     }
   };
 
+  const handleReject = async (orderId: number) => {
+    try {
+      setLoading(true);
+      const res = await driversApi.rejectOrder(user.id, orderId);
+      if (res.error) {
+        setError(res.error);
+      } else if (res.data) {
+        // Show success message from backend
+        alert(res.data.message);
+        await fetchAssigned();
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to reject order');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // derive lists for tabs
   const normalizeStatus = (order: any) => (order?.status ?? '').toString().toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
   const isFinalStatus = (statusNorm: string) => statusNorm.includes('DELIVER') || statusNorm.includes('CANCEL') || statusNorm.includes('COMPLETE') || statusNorm.includes('DONE');
@@ -182,7 +200,10 @@ const DriverDashboard: React.FC<DriverDashboardProps> = ({ user }) => {
 
                     <div className="flex space-x-2">
                       {isReady && tab === 'assigned' && (
-                        <Button onClick={() => handlePickup(order.id)} size="sm">Pickup</Button>
+                        <>
+                          <Button onClick={() => handlePickup(order.id)} size="sm">Pickup</Button>
+                          <Button onClick={() => handleReject(order.id)} size="sm" variant="destructive">Reject</Button>
+                        </>
                       )}
                       {isPickedUp && tab === 'assigned' && (
                         <Button onClick={() => handleDeliver(order.id)} size="sm">DELIVER</Button>

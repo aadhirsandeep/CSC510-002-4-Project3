@@ -59,19 +59,23 @@ def test_get_latest_driver_location_and_status_cycle():
 def test_find_nearest_idle_driver_returns_driver():
     db = SessionLocal()
     try:
-        # create a fresh driver and location near 0,0
+        # create a fresh driver and location far from origin to ensure it's uniquely identifiable
         d = User(email="neardrv@example.com", name="ND", hashed_password="x", role=Role.DRIVER)
         db.add(d)
         db.commit()
         db.refresh(d)
 
-        loc = DriverLocation(driver_id=d.id, lat=0.001, lng=0.001, timestamp=datetime.utcnow(), status=DriverStatus.IDLE)
+        # Use a far location like 50.0, 50.0 to test uniquely
+        test_lat, test_lng = 50.0, 50.0
+        loc = DriverLocation(driver_id=d.id, lat=test_lat + 0.001, lng=test_lng + 0.001, timestamp=datetime.utcnow(), status=DriverStatus.IDLE)
         db.add(loc)
         db.commit()
 
-        res = driver_svc.find_nearest_idle_driver(0.0, 0.0, db)
+        # Find nearest driver to the test location
+        res = driver_svc.find_nearest_idle_driver(test_lat, test_lng, db)
         assert res is not None
         driver, distance = res
+        # Should return the driver we just created since it's nearest to test location
         assert driver.id == d.id
         assert distance >= 0
     finally:
