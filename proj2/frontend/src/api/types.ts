@@ -304,3 +304,79 @@ export interface StaffMember {
   role: StaffRole;
   is_active: boolean;
 }
+
+// Refund Types
+export type RefundCategory = 'RESTAURANT_ISSUE' | 'DRIVER_ISSUE' | 'CUSTOMER_ISSUE' | 'SYSTEM_ERROR' | 'OTHER';
+export type RefundStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED' | 'FAILED';
+export type IssueType = 'QUALITY' | 'DELAY' | 'CANCELLATION' | 'DAMAGE' | 'NO_SHOW' | 'OUT_OF_STOCK' | 'OTHER';
+export type IssueStatus = 'REPORTED' | 'INVESTIGATING' | 'RESOLVED' | 'DISMISSED';
+
+export interface Refund {
+  id: number;
+  order_id: number;
+  payment_id?: number;
+  original_amount: number;
+  refund_amount: number;
+  refund_percentage?: number;
+  reason_category: RefundCategory;
+  reason_code?: string;
+  reason_description?: string;
+  status: RefundStatus;
+  initiated_by_user_id: number;
+  approved_by_user_id?: number;
+  requested_at: string;
+  processed_at?: string;
+  provider_refund_id?: string;
+  provider_status?: string;
+}
+
+export interface RefundCreate {
+  order_id: number;
+  reason_category: RefundCategory;
+  reason_code?: string;
+  reason_description?: string;
+  refund_amount?: number;
+  refund_percentage?: number;
+}
+
+export interface RefundApprove {
+  approved_amount?: number;
+  notes?: string;
+}
+
+export interface RefundReject {
+  rejection_reason: string;
+}
+
+export interface RefundReason {
+  id: number;
+  code: string;
+  category: RefundCategory;
+  display_name: string;
+  description?: string;
+  requires_approval: boolean;
+  auto_approve: boolean;
+  refund_percentage: number;
+  active: boolean;
+}
+
+export interface OrderIssue {
+  id: number;
+  order_id: number;
+  reported_by_user_id: number;
+  reporter_role?: string;
+  issue_type: IssueType;
+  description?: string;
+  status: IssueStatus;
+  assigned_to_user_id?: number;
+  resolution_notes?: string;
+  reported_at: string;
+  resolved_at?: string;
+}
+
+export interface OrderIssueCreate {
+  order_id: number;
+  issue_type: IssueType;
+  description?: string;
+  request_refund?: boolean;
+}

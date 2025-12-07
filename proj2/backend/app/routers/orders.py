@@ -1,11 +1,13 @@
 # Copyright (c) 2025 Group 2
 # All rights reserved.
-# 
+#
 # This project and its source code are the property of Group 2:
 # - Aryan Tapkire
 # - Dilip Irala Narasimhareddy
 # - Sachi Vyas
 # - Supraj Gijre
+
+from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
@@ -15,6 +17,8 @@ from ..schemas import PlaceOrderRequest, OrderOut, AssignDriverRequest, OrderSum
 from ..models import Cart, CartItem, Item, Order, OrderItem, OrderStatus, User, Cafe
 from ..deps import get_current_user, require_cafe_staff_or_owner
 from ..services.driver import find_nearest_idle_driver, update_driver_status_to_occupied
+from ..services.refund import create_refund, get_refund_amount_for_cancellation
+from ..models import RefundCategory
 import secrets
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -117,10 +121,32 @@ def cancel_order(order_id: int, db: Session = Depends(get_db), current: User = D
         raise HTTPException(status_code=400, detail="Cancellation window passed")
     if order.status not in [OrderStatus.PENDING, OrderStatus.ACCEPTED]:
         raise HTTPException(status_code=400, detail="Order cannot be cancelled in current status")
+
+    # Calculate refund amount before cancelling
+    refund_amount = get_refund_amount_for_cancellation(order, db)
+
+    # Cancel the order
     order.status = OrderStatus.CANCELLED
     db.add(order)
     db.commit()
     db.refresh(order)
+
+    # Create refund if eligible
+    if refund_amount > 0:
+        try:
+            create_refund(
+                order_id=order.id,
+                reason_category=RefundCategory.CUSTOMER_ISSUE,
+                initiated_by_user_id=current.id,
+                db=db,
+                reason_code="USER_CANCEL",
+                reason_description="User-initiated cancellation within allowed window",
+                refund_amount=refund_amount,
+            )
+        except ValueError as e:
+            # Log error but don't fail the cancellation
+            print(f"Failed to create refund for cancelled order {order.id}: {e}")
+
     return order
 
 @router.get("/my", response_model=list[OrderOut])

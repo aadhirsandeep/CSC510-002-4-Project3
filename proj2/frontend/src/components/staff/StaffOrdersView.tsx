@@ -25,11 +25,22 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { Clock, CheckCircle, XCircle, Package, TrendingUp, User } from 'lucide-react';
-import { Order, OrderStatus } from '../../api/types';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Label } from '../ui/label';
+import { Input } from '../ui/input';
+import { Textarea } from '../ui/textarea';
+import { Clock, CheckCircle, XCircle, Package, TrendingUp, User, DollarSign, AlertCircle } from 'lucide-react';
+import { Order, OrderStatus, Refund } from '../../api/types';
 import { ordersApi } from '../../api';
+import { refundsApi } from '../../api/refunds';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
+import { RefundStatusBadge } from '../user/RefundStatusBadge';
+
+interface RefundAction {
+  refund: Refund;
+  action: 'approve' | 'reject';
+}
 
 const StaffOrdersView: React.FC = () => {
   const { user } = useAuth();
@@ -37,14 +48,33 @@ const StaffOrdersView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [processingOrderId, setProcessingOrderId] = useState<number | null>(null);
 
+  // Refund management state
+  const [pendingRefunds, setPendingRefunds] = useState<Refund[]>([]);
+  const [actionDialog, setActionDialog] = useState<RefundAction | null>(null);
+  const [approvedAmount, setApprovedAmount] = useState<string>('');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [notes, setNotes] = useState('');
+  const [processing, setProcessing] = useState(false);
+
   useEffect(() => {
     if (user?.cafe?.id) {
       loadOrders();
-      // Refresh orders every 30 seconds
-      const interval = setInterval(loadOrders, 30000);
+      loadRefunds();
+      // Refresh orders and refunds every 30 seconds
+      const interval = setInterval(() => {
+        loadOrders();
+        loadRefunds();
+      }, 30000);
+      return () => clearInterval(interval);
+    } else if (user && user.role === 'STAFF') {
+      // Staff without cafe can still load refunds
+      loadRefunds();
+      const interval = setInterval(() => {
+        loadRefunds();
+      }, 30000);
       return () => clearInterval(interval);
     }
-  }, [user?.cafe?.id]);
+  }, [user?.cafe?.id, user?.role]);
 
   const loadOrders = async () => {
     if (!user?.cafe?.id) return;
@@ -87,6 +117,98 @@ const StaffOrdersView: React.FC = () => {
   const acceptOrder = (orderId: number) => updateOrderStatus(orderId, 'ACCEPTED');
   const declineOrder = (orderId: number) => updateOrderStatus(orderId, 'DECLINED');
   const markReady = (orderId: number) => updateOrderStatus(orderId, 'READY');
+
+  // Refund management functions
+  const loadRefunds = async () => {
+    const { data, error } = await refundsApi.getPendingRefunds();
+
+    if (error) {
+      console.error('Failed to load refunds:', error);
+      return;
+    }
+
+    if (data) {
+      setPendingRefunds(data);
+    }
+  };
+
+  const openApproveDialog = (refund: Refund) => {
+    setActionDialog({ refund, action: 'approve' });
+    setApprovedAmount(refund.refund_amount.toString());
+    setNotes('');
+  };
+
+  const openRejectDialog = (refund: Refund) => {
+    setActionDialog({ refund, action: 'reject' });
+    setRejectionReason('');
+  };
+
+  const closeDialog = () => {
+    setActionDialog(null);
+    setApprovedAmount('');
+    setRejectionReason('');
+    setNotes('');
+  };
+
+  const handleApprove = async () => {
+    if (!actionDialog) return;
+
+    const amount = parseFloat(approvedAmount);
+    if (isNaN(amount) || amount <= 0 || amount > actionDialog.refund.refund_amount) {
+      toast.error(`Amount must be between $0 and $${actionDialog.refund.refund_amount.toFixed(2)}`);
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const response = await refundsApi.approveRefund(actionDialog.refund.id, {
+        approved_amount: amount,
+        notes: notes.trim() || undefined,
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      toast.success(`Refund of $${amount.toFixed(2)} has been approved`);
+      closeDialog();
+      loadRefunds();
+    } catch (error) {
+      console.error('Error approving refund:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to approve refund');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    if (!actionDialog) return;
+
+    if (!rejectionReason.trim()) {
+      toast.error('Please provide a reason for rejecting this refund');
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      const response = await refundsApi.rejectRefund(actionDialog.refund.id, {
+        rejection_reason: rejectionReason,
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      toast.success('Refund request has been rejected');
+      closeDialog();
+      loadRefunds();
+    } catch (error) {
+      console.error('Error rejecting refund:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to reject refund');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // Filter orders by status
   const pendingOrders = orders.filter(o => o.status === 'PENDING');
@@ -238,7 +360,7 @@ const StaffOrdersView: React.FC = () => {
 
       {/* Orders Tabs */}
       <Tabs defaultValue="pending" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="pending" className="relative">
             Incoming
             {pendingOrders.length > 0 && (
@@ -252,6 +374,12 @@ const StaffOrdersView: React.FC = () => {
             )}
           </TabsTrigger>
           <TabsTrigger value="completed">Completed</TabsTrigger>
+          <TabsTrigger value="refunds">
+            Refunds
+            {pendingRefunds.length > 0 && (
+              <Badge className="ml-2 bg-red-500">{pendingRefunds.length}</Badge>
+            )}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="pending" className="space-y-4 mt-4">
@@ -295,7 +423,183 @@ const StaffOrdersView: React.FC = () => {
             completedOrders.map(order => <OrderCard key={order.id} order={order} />)
           )}
         </TabsContent>
+
+        <TabsContent value="refunds" className="space-y-4 mt-4">
+          {pendingRefunds.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-12">
+                <DollarSign className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No Pending Refunds</h3>
+                <p className="text-muted-foreground">Refund requests will appear here</p>
+              </CardContent>
+            </Card>
+          ) : (
+            pendingRefunds.map(refund => (
+              <Card key={refund.id}>
+                <CardHeader>
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-2">
+                      <CardTitle className="flex items-center gap-2">
+                        Order #{refund.order_id}
+                        <RefundStatusBadge status={refund.status} />
+                      </CardTitle>
+                      <CardDescription>
+                        Refund #{refund.id} • Requested {new Date(refund.requested_at).toLocaleString()}
+                      </CardDescription>
+                    </div>
+                    <div className="text-right">
+                      <p className="font-semibold text-lg">${refund.refund_amount.toFixed(2)}</p>
+                      {refund.refund_percentage && (
+                        <p className="text-sm text-muted-foreground">{refund.refund_percentage}%</p>
+                      )}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Original Amount</p>
+                        <p className="font-medium">${refund.original_amount.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Category</p>
+                        <p className="font-medium">{refund.reason_category.replace(/_/g, ' ')}</p>
+                      </div>
+                    </div>
+
+                    {refund.reason_description && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Reason</p>
+                        <p className="text-sm bg-gray-50 p-2 rounded">{refund.reason_description}</p>
+                      </div>
+                    )}
+
+                    {refund.reason_code && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Reason Code</p>
+                        <Badge variant="outline">{refund.reason_code}</Badge>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+                <CardFooter className="gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => openApproveDialog(refund)}
+                    className="flex-1"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-1" />
+                    Approve
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => openRejectDialog(refund)}
+                    className="flex-1"
+                  >
+                    <XCircle className="h-4 w-4 mr-1" />
+                    Reject
+                  </Button>
+                </CardFooter>
+              </Card>
+            ))
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* Refund Action Dialog */}
+      {actionDialog && (
+        <Dialog open={!!actionDialog} onOpenChange={(open) => !open && closeDialog()}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>
+                {actionDialog.action === 'approve' ? 'Approve Refund' : 'Reject Refund'}
+              </DialogTitle>
+              <DialogDescription>
+                Order #{actionDialog.refund.order_id} • Refund #{actionDialog.refund.id}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-4 py-4">
+              {actionDialog.action === 'approve' ? (
+                <>
+                  <div className="grid gap-2">
+                    <Label htmlFor="approved-amount">Approved Amount</Label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">$</span>
+                      <Input
+                        id="approved-amount"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        max={actionDialog.refund.refund_amount}
+                        value={approvedAmount}
+                        onChange={(e) => setApprovedAmount(e.target.value)}
+                      />
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Requested: ${actionDialog.refund.refund_amount.toFixed(2)}
+                    </p>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label htmlFor="notes">Notes (Optional)</Label>
+                    <Textarea
+                      id="notes"
+                      placeholder="Add any notes about this approval..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      rows={3}
+                    />
+                  </div>
+                </>
+              ) : (
+                <div className="grid gap-2">
+                  <Label htmlFor="rejection-reason">Rejection Reason</Label>
+                  <Textarea
+                    id="rejection-reason"
+                    placeholder="Please provide a reason for rejecting this refund..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    rows={4}
+                    className="resize-none"
+                  />
+                </div>
+              )}
+
+              <div className="rounded-lg bg-gray-50 p-3 text-sm">
+                <p className="font-medium mb-2">Refund Details:</p>
+                <div className="space-y-1 text-muted-foreground">
+                  <p>Category: {actionDialog.refund.reason_category.replace(/_/g, ' ')}</p>
+                  {actionDialog.refund.reason_description && (
+                    <p>Reason: {actionDialog.refund.reason_description}</p>
+                  )}
+                  <p>Requested: {new Date(actionDialog.refund.requested_at).toLocaleString()}</p>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={closeDialog} disabled={processing}>
+                Cancel
+              </Button>
+              <Button
+                onClick={actionDialog.action === 'approve' ? handleApprove : handleReject}
+                disabled={processing}
+                variant={actionDialog.action === 'approve' ? 'default' : 'destructive'}
+              >
+                {processing
+                  ? 'Processing...'
+                  : actionDialog.action === 'approve'
+                  ? 'Approve Refund'
+                  : 'Reject Refund'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 };
