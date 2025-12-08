@@ -128,20 +128,18 @@ def test_assign_driver_when_already_assigned_returns_400(client):
     r2 = client.post('/drivers/register', json={"email": "drv2_as@example.com", "name": "D2", "password": "pwd"})
     drv2 = r2.json()
 
-    # assign drv1 directly in DB
-    TEST_DB_URL = os.environ.get('DATABASE_URL', 'sqlite:///./test.db')
-    engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-    db = SessionLocal()
-    try:
-        db_order = db.query(Order).filter(Order.id == order['id']).first()
-        db_order.driver_id = drv1['id']
-        db_order.status = OrderStatus.ACCEPTED
-        db.add(db_order)
-        db.commit()
-    finally:
-        db.close()
+    # First accept the order, then assign drv1 via API
+    r_accept = client.post(f"/orders/{order['id']}/status", json="ACCEPTED", headers=owner_hdr)
+    assert r_accept.status_code == 200
 
-    # owner tries to assign drv2 -> should return 400
+    # Assign drv1 via API
+    r_assign = client.post(f"/orders/{order['id']}/assign-driver", json={"driver_id": drv1['id']}, headers=owner_hdr)
+    assert r_assign.status_code == 200
+
+    # owner tries to assign drv2 -> should succeed with 200 (reassignment is now allowed)
+    # The previous driver (drv1) will be set back to IDLE and drv2 will be assigned
     ra = client.post(f"/orders/{order['id']}/assign-driver", json={"driver_id": drv2['id']}, headers=owner_hdr)
-    assert ra.status_code == 400
+    assert ra.status_code == 200
+    # Verify driver was reassigned
+    order_after = ra.json()
+    assert order_after['driver_id'] == drv2['id']

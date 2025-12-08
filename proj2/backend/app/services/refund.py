@@ -133,11 +133,10 @@ def create_refund(
     original_amount = order.total_price
 
     if refund_amount is None:
-        # Auto-calculate based on percentage
-        if refund_percentage is None:
-            refund_percentage = calculate_refund_percentage(order, reason_code, db)
-
-        refund_amount = original_amount * (refund_percentage / 100.0)
+        # Customers always request full refund amount
+        # Restaurant staff can decide on partial refunds during approval
+        refund_amount = original_amount
+        refund_percentage = 100.0
     else:
         # Calculate percentage from amount
         refund_percentage = (refund_amount / original_amount * 100.0) if original_amount > 0 else 100.0

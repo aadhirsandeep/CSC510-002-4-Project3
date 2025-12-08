@@ -82,9 +82,9 @@ def request_refund(
 @router.get("/pending", response_model=List[RefundOut])
 def get_pending_refunds(
     db: Session = Depends(get_db),
-    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN))
+    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN, Role.OWNER))
 ):
-    """Get all pending refunds (staff/admin only)."""
+    """Get all pending refunds (staff/admin/owner only)."""
     refunds = db.query(Refund).filter(Refund.status == RefundStatus.PENDING).all()
     return refunds
 
@@ -144,9 +144,9 @@ def approve_refund_endpoint(
     refund_id: int,
     data: RefundApprove,
     db: Session = Depends(get_db),
-    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN))
+    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN, Role.OWNER))
 ):
-    """Approve a pending refund (staff/admin only)."""
+    """Approve a pending refund (staff/admin/owner only)."""
     try:
         refund = approve_refund(
             refund_id=refund_id,
@@ -165,9 +165,9 @@ def reject_refund_endpoint(
     refund_id: int,
     data: RefundReject,
     db: Session = Depends(get_db),
-    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN))
+    staff_or_admin: User = Depends(require_roles(Role.STAFF, Role.ADMIN, Role.OWNER))
 ):
-    """Reject a pending refund (staff/admin only)."""
+    """Reject a pending refund (staff/admin/owner only)."""
     try:
         refund = reject_refund(
             refund_id=refund_id,
