@@ -11,7 +11,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Dict
 from datetime import datetime, date
-from .models import Role, OrderStatus, PaymentStatus, DriverStatus
+from .models import Role, OrderStatus, PaymentStatus, DriverStatus, RefundCategory, RefundStatus, IssueType, IssueStatus
 
 class Token(BaseModel):
     """Schema for JWT token response containing access and refresh tokens."""
@@ -326,6 +326,104 @@ class OrderSummaryOut(BaseModel):
     class Config:
         from_attributes = True
 
+# ============================================================================
+# Refund Schemas
+# ============================================================================
+
+class RefundCreate(BaseModel):
+    """Schema for creating a refund request."""
+    order_id: int
+    reason_category: RefundCategory
+    reason_code: Optional[str] = None
+    reason_description: Optional[str] = None
+    refund_amount: Optional[float] = None  # If None, auto-calculate
+    refund_percentage: Optional[float] = None
+
+class RefundOut(BaseModel):
+    """Schema for refund data returned in API responses."""
+    id: int
+    order_id: int
+    payment_id: Optional[int]
+    original_amount: float
+    refund_amount: float
+    refund_percentage: Optional[float]
+    reason_category: RefundCategory
+    reason_code: Optional[str]
+    reason_description: Optional[str]
+    status: RefundStatus
+    initiated_by_user_id: int
+    approved_by_user_id: Optional[int]
+    requested_at: datetime
+    processed_at: Optional[datetime]
+    provider_refund_id: Optional[str]
+    provider_status: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class RefundApprove(BaseModel):
+    """Schema for approving a refund request."""
+    approved_amount: Optional[float] = None
+    notes: Optional[str] = None
+
+class RefundReject(BaseModel):
+    """Schema for rejecting a refund request."""
+    rejection_reason: str
+
+class RefundReasonCreate(BaseModel):
+    """Schema for creating a refund reason."""
+    code: str
+    category: RefundCategory
+    display_name: str
+    description: Optional[str] = None
+    requires_approval: bool = False
+    auto_approve: bool = False
+    refund_percentage: int = 100
+
+class RefundReasonOut(BaseModel):
+    """Schema for refund reason data returned in API responses."""
+    id: int
+    code: str
+    category: RefundCategory
+    display_name: str
+    description: Optional[str]
+    requires_approval: bool
+    auto_approve: bool
+    refund_percentage: int
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+class OrderIssueCreate(BaseModel):
+    """Schema for reporting an order issue."""
+    order_id: int
+    issue_type: IssueType
+    description: Optional[str] = None
+    request_refund: bool = False
+
+class OrderIssueOut(BaseModel):
+    """Schema for order issue data returned in API responses."""
+    id: int
+    order_id: int
+    reported_by_user_id: int
+    reporter_role: Optional[Role]
+    issue_type: IssueType
+    description: Optional[str]
+    status: IssueStatus
+    assigned_to_user_id: Optional[int]
+    resolution_notes: Optional[str]
+    reported_at: datetime
+    resolved_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+class OrderIssueResolve(BaseModel):
+    """Schema for resolving an order issue."""
+    resolution_notes: Optional[str] = None
+    refund_approved: bool = False
+    refund_amount: Optional[float] = None
 
 # Wait Time Tracking Schemas
 class WaitTimeEstimate(BaseModel):

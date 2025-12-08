@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python test_staff_assignment.py:*)"
+      "Bash(python test_staff_assignment.py:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)"
     ],
     "deny": [],
     "ask": []

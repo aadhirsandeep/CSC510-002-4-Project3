@@ -21,12 +21,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { Clock, MapPin, Star, RotateCcw, Package } from 'lucide-react';
-import { User, Order as ApiOrder } from '../../api/types';
+import { Clock, MapPin, Star, RotateCcw, Package, DollarSign } from 'lucide-react';
+import { User, Order as ApiOrder, Refund } from '../../api/types';
 import { toast } from 'sonner';
 import { getMyOrders, cancelOrder as cancelOrderApi, getOrder as getOrderApi } from '../../api/orders';
 import { getCafe as getCafeApi } from '../../api/cafes';
 import { createReview } from '../../api/reviews';
+import { refundsApi } from '../../api/refunds';
+import { RefundStatusBadge } from './RefundStatusBadge';
+import { RefundRequestDialog } from './RefundRequestDialog';
 
 // Local Order interface for the component
 interface Order {
@@ -53,6 +56,11 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
   const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [activeTab, setActiveTab] = useState('all');
   const cafeNameCache = new Map<number, string>();
+
+  // Refund state
+  const [orderRefunds, setOrderRefunds] = useState<Map<string, Refund[]>>(new Map());
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [selectedOrderForRefund, setSelectedOrderForRefund] = useState<ApiOrder | null>(null);
 
   useEffect(() => {
     // Fetch orders from API
@@ -138,6 +146,32 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
 
     fetchOrders();
   }, [user.id]);
+
+  // Fetch refunds for all orders
+  useEffect(() => {
+    const fetchRefunds = async () => {
+      const refundMap = new Map<string, Refund[]>();
+
+      await Promise.all(
+        orders.map(async (order) => {
+          try {
+            const response = await refundsApi.getRefundsForOrder(parseInt(order.id));
+            if (response.data && response.data.length > 0) {
+              refundMap.set(order.id, response.data);
+            }
+          } catch (error) {
+            console.debug('[OrderHistory] Failed to fetch refunds for order', order.id, error);
+          }
+        })
+      );
+
+      setOrderRefunds(refundMap);
+    };
+
+    if (orders.length > 0) {
+      fetchRefunds();
+    }
+  }, [orders]);
 
   useEffect(() => {
     let filtered = orders;
@@ -272,6 +306,39 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
     }
   };
 
+  // Refund functions
+  const canRequestRefund = (order: Order) => {
+    // Can request refund for delivered, cancelled, or completed orders
+    // that don't already have any refund request (only one refund per order allowed)
+    const refunds = orderRefunds.get(order.id) || [];
+
+    // Check if there's ANY existing refund request
+    if (refunds.length > 0) return false;
+
+    // Allow refund requests for certain order statuses
+    return ['delivered', 'cancelled', 'picked_up', 'ready', 'accepted'].includes(order.status);
+  };
+
+  const openRefundDialog = (order: Order) => {
+    // Find the raw API order object to pass to the dialog
+    const rawOrder: ApiOrder = {
+      id: parseInt(order.id),
+      cafe_id: parseInt(order.restaurantId),
+      status: order.status.toUpperCase() as any,
+      created_at: order.createdAt.toISOString(),
+      total_price: order.totalAmount,
+      total_calories: order.totalCalories,
+      can_cancel_until: order.canCancelUntil?.toISOString() || '',
+    };
+    setSelectedOrderForRefund(rawOrder);
+    setRefundDialogOpen(true);
+  };
+
+  const handleRefundCreated = () => {
+    // Refresh orders and refunds after creating a new refund request
+    window.location.reload();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col space-y-2">
@@ -320,11 +387,14 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
                     <CardHeader>
                       <div className="flex items-start justify-between">
                         <div className="space-y-2">
-                          <CardTitle className="flex items-center gap-2">
+                          <CardTitle className="flex items-center gap-2 flex-wrap">
                             {order.restaurantName ?? getRestaurantName(order.restaurantId)}
                             <Badge className={getStatusColor(order.status)}>
                               {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                             </Badge>
+                            {orderRefunds.get(order.id)?.map((refund) => (
+                              <RefundStatusBadge key={refund.id} status={refund.status} />
+                            ))}
                           </CardTitle>
                           <CardDescription>
                             Order #{order.id} • {new Date(order.createdAt).toLocaleString()}
@@ -353,6 +423,39 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
                               ))}
                             </div>
                           )}
+
+                        {/* Refund Information */}
+                        {orderRefunds.get(order.id) && orderRefunds.get(order.id)!.length > 0 && (
+                          <div className="space-y-2">
+                            {orderRefunds.get(order.id)!.map((refund) => (
+                              <div key={refund.id} className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <DollarSign className="h-4 w-4 text-blue-600" />
+                                    <span className="text-sm font-medium text-blue-900">
+                                      Refund: ${refund.refund_amount.toFixed(2)}
+                                    </span>
+                                    {refund.refund_percentage && (
+                                      <span className="text-xs text-blue-700">
+                                        ({refund.refund_percentage}%)
+                                      </span>
+                                    )}
+                                  </div>
+                                  <RefundStatusBadge status={refund.status} />
+                                </div>
+                                {refund.reason_description && (
+                                  <p className="text-xs text-blue-700 mt-1">
+                                    Reason: {refund.reason_description}
+                                  </p>
+                                )}
+                                <p className="text-xs text-blue-600 mt-1">
+                                  Requested: {new Date(refund.requested_at).toLocaleString()}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div className="flex items-center gap-4 text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <Clock className="h-4 w-4" />
@@ -402,12 +505,23 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
                           </Button>
 
                           {canCancelOrder(order) && (
-                            <Button 
-                              variant="destructive" 
+                            <Button
+                              variant="destructive"
                               size="sm"
                               onClick={() => cancelOrder(order.id)}
                             >
                               Cancel Order
+                            </Button>
+                          )}
+
+                          {canRequestRefund(order) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => openRefundDialog(order)}
+                            >
+                              <DollarSign className="h-4 w-4 mr-1" />
+                              Request Refund
                             </Button>
                           )}
                         </div>
@@ -467,6 +581,16 @@ const OrderHistory: React.FC<OrderHistoryProps> = ({ user }) => {
           </TabsContent>
         ))}
       </Tabs>
+
+      {/* Refund Request Dialog */}
+      {selectedOrderForRefund && (
+        <RefundRequestDialog
+          open={refundDialogOpen}
+          onOpenChange={setRefundDialogOpen}
+          order={selectedOrderForRefund}
+          onRefundCreated={handleRefundCreated}
+        />
+      )}
     </div>
   );
 };
