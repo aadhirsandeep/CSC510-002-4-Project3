@@ -1,20 +1,25 @@
 # Copyright (c) 2025 Group 2
 # All rights reserved.
-# 
+#
 # This project and its source code are the property of Group 2:
 # - Aryan Tapkire
 # - Dilip Irala Narasimhareddy
 # - Sachi Vyas
 # - Supraj Gijre
 
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..database import get_db
-from ..schemas import PlaceOrderRequest, OrderOut, AssignDriverRequest, OrderSummaryOut
+from ..schemas import PlaceOrderRequest, OrderOut, AssignDriverRequest, OrderSummaryOut, CancelAndReassignResponse, WaitTimeEstimate, SetPrepTimeRequest
 from ..models import Cart, CartItem, Item, Order, OrderItem, OrderStatus, User, Cafe
 from ..deps import get_current_user, require_cafe_staff_or_owner
 from ..services.driver import find_nearest_idle_driver, update_driver_status_to_occupied
+from ..services.refund import create_refund, get_refund_amount_for_cancellation
+from ..models import RefundCategory
+from ..services.wait_time import WaitTimeService
 import secrets
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -109,7 +114,7 @@ def order_summary(order_id: int, db: Session = Depends(get_db), current: User = 
 
 @router.post("/{order_id}/cancel", response_model=OrderOut)
 def cancel_order(order_id: int, db: Session = Depends(get_db), current: User = Depends(get_current_user)):
-    """Cancel own order within allowed window when in cancellable statuses."""
+    """Cancel own order within allowed window when in cancellable statuses. Frees up assigned driver if any."""
     order = db.query(Order).filter(Order.id == order_id, Order.user_id == current.id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
@@ -117,10 +122,37 @@ def cancel_order(order_id: int, db: Session = Depends(get_db), current: User = D
         raise HTTPException(status_code=400, detail="Cancellation window passed")
     if order.status not in [OrderStatus.PENDING, OrderStatus.ACCEPTED]:
         raise HTTPException(status_code=400, detail="Order cannot be cancelled in current status")
+
+    # Calculate refund amount before cancelling
+    refund_amount = get_refund_amount_for_cancellation(order, db)
+
+    # Cancel the order
+    # If a driver was assigned, set them back to IDLE
+    if order.driver_id:
+        from ..services.driver import update_driver_status_to_idle
+        update_driver_status_to_idle(order.driver_id, db)
+
     order.status = OrderStatus.CANCELLED
     db.add(order)
     db.commit()
     db.refresh(order)
+
+    # Create refund if eligible
+    if refund_amount > 0:
+        try:
+            create_refund(
+                order_id=order.id,
+                reason_category=RefundCategory.CUSTOMER_ISSUE,
+                initiated_by_user_id=current.id,
+                db=db,
+                reason_code="USER_CANCEL",
+                reason_description="User-initiated cancellation within allowed window",
+                refund_amount=refund_amount,
+            )
+        except ValueError as e:
+            # Log error but don't fail the cancellation
+            print(f"Failed to create refund for cancelled order {order.id}: {e}")
+
     return order
 
 @router.get("/my", response_model=list[OrderOut])
@@ -193,6 +225,12 @@ def update_status(
     Accepts new_status as:
     - Query parameter: ?new_status=ACCEPTED (from demo scripts)  
     - JSON body: "ACCEPTED" (as string directly from frontend) or {"new_status": "ACCEPTED"}
+    
+    Automatically sets timestamps for wait time tracking:
+    - ACCEPTED: sets prep_started_at
+    - READY: sets ready_at
+    - PICKED_UP: sets picked_up_at
+    - DELIVERED: sets delivered_at
     """
     # Determine which status value to use
     status_str = None
@@ -223,9 +261,25 @@ def update_status(
         OrderStatus.PENDING: {OrderStatus.ACCEPTED, OrderStatus.DECLINED},
         OrderStatus.ACCEPTED: {OrderStatus.READY, OrderStatus.CANCELLED},
         OrderStatus.READY: {OrderStatus.PICKED_UP},
+        OrderStatus.PICKED_UP: {OrderStatus.DELIVERED},
     }
     if order.status in valid_transitions and new_status_enum in valid_transitions[order.status]:
+        now = datetime.utcnow()
         order.status = new_status_enum
+        
+        # Set timestamps for wait time tracking
+        if new_status_enum == OrderStatus.ACCEPTED:
+            order.prep_started_at = now
+            # Set default prep time if not already set
+            if not order.estimated_prep_minutes:
+                order.estimated_prep_minutes = WaitTimeService.estimate_prep_time_from_items(order.id, db)
+        elif new_status_enum == OrderStatus.READY:
+            order.ready_at = now
+        elif new_status_enum == OrderStatus.PICKED_UP:
+            order.picked_up_at = now
+        elif new_status_enum == OrderStatus.DELIVERED:
+            order.delivered_at = now
+        
         db.add(order)
         db.commit()
         db.refresh(order)
@@ -259,9 +313,18 @@ def assign_driver(order_id: int, assignment: AssignDriverRequest = None, db: Ses
     # Check permissions
     require_cafe_staff_or_owner(order.cafe_id, db, current)
     
-    # Check if order already has a driver
+    # If order already has a driver, unassign them first (allow reassignment)
     if order.driver_id:
-        raise HTTPException(status_code=400, detail="Order already has a driver assigned")
+        # If manual assignment to the SAME driver, just return
+        if assignment and assignment.driver_id and assignment.driver_id == order.driver_id:
+            return order
+
+        from ..services.driver import update_driver_status_to_idle
+        update_driver_status_to_idle(order.driver_id, db)
+        order.driver_id = None
+        db.add(order)
+        db.commit()
+        db.refresh(order)
     
     # Check if order status allows driver assignment
     if order.status not in [OrderStatus.ACCEPTED, OrderStatus.READY]:
@@ -305,7 +368,259 @@ def assign_driver(order_id: int, assignment: AssignDriverRequest = None, db: Ses
     
     # Update driver status to OCCUPIED
     update_driver_status_to_occupied(driver_id, db)
+
+    db.refresh(order)
+
+    return order
+
+
+# ============ Wait Time Tracking Endpoints ============
+
+@router.get("/{order_id}/wait-time", response_model=WaitTimeEstimate)
+def get_wait_time(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Get the current wait time estimate for an order.
     
+    Returns estimated prep time, delivery time, and total wait time.
+    Updates dynamically based on order status and driver location.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Check authorization: order owner, cafe staff/owner, driver, or admin
+    is_authorized = (
+        order.user_id == current.id or
+        order.driver_id == current.id or
+        current.role.value == "ADMIN"
+    )
+    
+    if not is_authorized:
+        try:
+            require_cafe_staff_or_owner(order.cafe_id, db, current)
+        except HTTPException:
+            raise HTTPException(status_code=403, detail="Not authorized to view this order's wait time")
+    
+    return WaitTimeService.get_wait_time_estimate(order, db)
+
+
+@router.patch("/{order_id}/prep-time", response_model=OrderOut)
+def set_order_prep_time(
+    order_id: int,
+    prep_data: SetPrepTimeRequest,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Set the estimated preparation time for an order.
+    
+    Only cafe staff/owners can set this, typically when accepting an order.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    # Only cafe staff/owners can set prep time
+    require_cafe_staff_or_owner(order.cafe_id, db, current)
+    
+    # Validate prep time
+    if prep_data.estimated_prep_minutes < 1:
+        raise HTTPException(status_code=400, detail="Prep time must be at least 1 minute")
+    if prep_data.estimated_prep_minutes > 120:
+        raise HTTPException(status_code=400, detail="Prep time cannot exceed 120 minutes")
+    
+    order.estimated_prep_minutes = prep_data.estimated_prep_minutes
+    db.add(order)
+    db.commit()
     db.refresh(order)
     
     return order
+def retry_driver_assignment(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Retry driver assignment for an order.
+    - If NO driver is assigned: Finds and assigns nearest idle driver
+    - If driver IS assigned: Cancels current assignment and reassigns to different driver
+
+    This is a unified endpoint that handles both initial assignment failures and reassignments.
+    Can be called by cafe staff/owners to ensure orders have drivers or to reroute orders.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Check permissions - only cafe staff/owners can assign/reassign
+    require_cafe_staff_or_owner(order.cafe_id, db, current)
+
+    # Check if order status allows driver assignment
+    if order.status not in [OrderStatus.ACCEPTED, OrderStatus.READY]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Order cannot be assigned in {order.status.value} status. Must be ACCEPTED or READY."
+        )
+
+    previous_driver_id = order.driver_id
+
+    # If there's a current driver, free them up
+    if previous_driver_id:
+        from ..services.driver import update_driver_status_to_idle
+        update_driver_status_to_idle(previous_driver_id, db)
+        order.driver_id = None
+        db.add(order)
+        db.commit()
+        db.refresh(order)
+
+    # Find nearest idle driver (excluding previous driver if there was one)
+    cafe = db.query(Cafe).filter(Cafe.id == order.cafe_id).first()
+    if not cafe:
+        raise HTTPException(status_code=404, detail="Cafe not found")
+
+    result = find_nearest_idle_driver(cafe.lat, cafe.lng, db, exclude_driver_id=previous_driver_id)
+
+    if not result:
+        # No driver available
+        if previous_driver_id:
+            # Had a driver before - reassign back to them
+            order.driver_id = previous_driver_id
+            db.add(order)
+            db.commit()
+            update_driver_status_to_occupied(previous_driver_id, db)
+            db.refresh(order)
+
+            previous_driver = db.query(User).filter(User.id == previous_driver_id).first()
+            return CancelAndReassignResponse(
+                order_id=order.id,
+                previous_driver_id=previous_driver_id,
+                new_driver_id=previous_driver_id,
+                new_driver_email=previous_driver.email if previous_driver else None,
+                message="No other drivers available - order kept with current driver"
+            )
+        else:
+            # Never had a driver - can't assign anyone
+            raise HTTPException(status_code=404, detail="No idle drivers available for assignment")
+
+    # Found a driver - assign them
+    new_driver, distance = result
+    new_driver_id = new_driver.id
+
+    order.driver_id = new_driver_id
+    db.add(order)
+    db.commit()
+    update_driver_status_to_occupied(new_driver_id, db)
+    db.refresh(order)
+
+    if previous_driver_id:
+        message = f"Order reassigned from driver {previous_driver_id} to driver {new_driver_id}"
+    else:
+        message = f"Driver {new_driver_id} assigned to order (was unassigned)"
+
+    return CancelAndReassignResponse(
+        order_id=order.id,
+        previous_driver_id=previous_driver_id,
+        new_driver_id=new_driver_id,
+        new_driver_email=new_driver.email,
+        message=message
+    )
+
+
+@router.post("/{order_id}/cancel-and-reassign", response_model=CancelAndReassignResponse)
+def cancel_and_reassign_driver(
+    order_id: int,
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user)
+):
+    """
+    Cancel the current driver assignment and automatically reassign to another driver.
+    Can be called by cafe staff/owners to reroute orders to a different driver.
+    The previous driver is set back to IDLE status, and a new nearest idle driver is assigned.
+
+    Note: This endpoint requires a driver to be assigned. Use /retry-assignment for a more
+    flexible option that works with or without an existing driver.
+    """
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    # Check permissions - only cafe staff/owners can reassign
+    require_cafe_staff_or_owner(order.cafe_id, db, current)
+
+    # Check if order has a driver assigned
+    if not order.driver_id:
+        raise HTTPException(status_code=400, detail="Order does not have a driver assigned")
+
+    # Check if order status allows reassignment (must be ACCEPTED or READY, not yet PICKED_UP)
+    if order.status not in [OrderStatus.ACCEPTED, OrderStatus.READY]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Order cannot be reassigned in {order.status.value} status. Must be ACCEPTED or READY."
+        )
+
+    # Store the previous driver ID
+    previous_driver_id = order.driver_id
+
+    # Set the previous driver back to IDLE
+    from ..services.driver import update_driver_status_to_idle
+    update_driver_status_to_idle(previous_driver_id, db)
+
+    # Remove driver assignment from order
+    order.driver_id = None
+    db.add(order)
+    db.commit()
+    db.refresh(order)
+
+    # Find nearest idle driver (excluding the previous driver)
+    cafe = db.query(Cafe).filter(Cafe.id == order.cafe_id).first()
+    if not cafe:
+        raise HTTPException(status_code=404, detail="Cafe not found")
+
+    result = find_nearest_idle_driver(cafe.lat, cafe.lng, db, exclude_driver_id=previous_driver_id)
+
+    if not result:
+        # No other driver available - reassign back to the previous driver
+        order.driver_id = previous_driver_id
+        db.add(order)
+        db.commit()
+
+        # Set previous driver back to OCCUPIED
+        update_driver_status_to_occupied(previous_driver_id, db)
+
+        db.refresh(order)
+
+        # Get driver info for response
+        previous_driver = db.query(User).filter(User.id == previous_driver_id).first()
+
+        return CancelAndReassignResponse(
+            order_id=order.id,
+            previous_driver_id=previous_driver_id,
+            new_driver_id=previous_driver_id,
+            new_driver_email=previous_driver.email if previous_driver else None,
+            message="No other drivers available - order kept with current driver"
+        )
+
+    new_driver, distance = result
+    new_driver_id = new_driver.id
+
+    # Assign new driver to order
+    order.driver_id = new_driver_id
+    db.add(order)
+    db.commit()
+
+    # Update new driver status to OCCUPIED
+    update_driver_status_to_occupied(new_driver_id, db)
+
+    db.refresh(order)
+
+    return CancelAndReassignResponse(
+        order_id=order.id,
+        previous_driver_id=previous_driver_id,
+        new_driver_id=new_driver_id,
+        new_driver_email=new_driver.email,
+        message=f"Order reassigned from driver {previous_driver_id} to driver {new_driver_id}"
+    )

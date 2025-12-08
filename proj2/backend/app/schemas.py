@@ -11,7 +11,7 @@
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List, Dict
 from datetime import datetime, date
-from .models import Role, OrderStatus, PaymentStatus, DriverStatus
+from .models import Role, OrderStatus, PaymentStatus, DriverStatus, RefundCategory, RefundStatus, IssueType, IssueStatus
 
 class Token(BaseModel):
     """Schema for JWT token response containing access and refresh tokens."""
@@ -122,11 +122,19 @@ class OrderOut(BaseModel):
     """Schema for order data returned in API responses."""
     id: int
     cafe_id: int
+    driver_id: Optional[int] = None
     status: OrderStatus
     created_at: datetime
     total_price: float
     total_calories: int
     can_cancel_until: datetime
+    pickup_code: Optional[str] = None
+    estimated_prep_minutes: Optional[int] = None
+    prep_started_at: Optional[datetime] = None
+    ready_at: Optional[datetime] = None
+    picked_up_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    estimated_delivery_minutes: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -213,6 +221,14 @@ class AssignDriverRequest(BaseModel):
     """Schema for assigning a driver to an order (auto-assign if driver_id is None)."""
     driver_id: Optional[int] = None  # If None, auto-assign nearest driver
 
+class CancelAndReassignResponse(BaseModel):
+    """Schema for cancel and reassign order response."""
+    order_id: int
+    previous_driver_id: Optional[int]
+    new_driver_id: Optional[int]
+    new_driver_email: Optional[str]
+    message: str
+
 class IdleDriverInfo(BaseModel):
     """Schema for idle driver information."""
     driver_id: int
@@ -256,6 +272,38 @@ class ReviewOut(ReviewBase):
     class Config:
         from_attributes = True
 
+# STAFF MANAGEMENT
+class StaffAssignmentCreate(BaseModel):
+    """Schema for creating a new staff assignment."""
+    user_id: int
+    cafe_id: int
+    role: Optional[Role] = Role.STAFF
+
+class StaffAssignByEmail(BaseModel):
+    """Schema for assigning staff by email address."""
+    email: str
+    cafe_id: int
+    role: Optional[Role] = Role.STAFF
+
+class StaffAssignmentOut(BaseModel):
+    """Schema for staff assignment data returned in API responses."""
+    id: int
+    user_id: int
+    cafe_id: int
+    role: Role
+    class Config:
+        from_attributes = True
+
+class StaffMemberOut(BaseModel):
+    """Schema for staff member details including user information."""
+    id: int  # Assignment ID
+    user_id: int
+    cafe_id: int
+    name: str
+    email: str
+    role: Role
+    is_active: bool
+
 class OrderSummaryOut(BaseModel):
     """Schema for detailed order summary including items and driver information."""
     id: int
@@ -277,3 +325,140 @@ class OrderSummaryOut(BaseModel):
     items: Optional[List[OrderItemSummary]] = []
     class Config:
         from_attributes = True
+
+# ============================================================================
+# Refund Schemas
+# ============================================================================
+
+class RefundCreate(BaseModel):
+    """Schema for creating a refund request."""
+    order_id: int
+    reason_category: RefundCategory
+    reason_code: Optional[str] = None
+    reason_description: Optional[str] = None
+    refund_amount: Optional[float] = None  # If None, auto-calculate
+    refund_percentage: Optional[float] = None
+
+class RefundOut(BaseModel):
+    """Schema for refund data returned in API responses."""
+    id: int
+    order_id: int
+    payment_id: Optional[int]
+    original_amount: float
+    refund_amount: float
+    refund_percentage: Optional[float]
+    reason_category: RefundCategory
+    reason_code: Optional[str]
+    reason_description: Optional[str]
+    status: RefundStatus
+    initiated_by_user_id: int
+    approved_by_user_id: Optional[int]
+    requested_at: datetime
+    processed_at: Optional[datetime]
+    provider_refund_id: Optional[str]
+    provider_status: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class RefundApprove(BaseModel):
+    """Schema for approving a refund request."""
+    approved_amount: Optional[float] = None
+    notes: Optional[str] = None
+
+class RefundReject(BaseModel):
+    """Schema for rejecting a refund request."""
+    rejection_reason: str
+
+class RefundReasonCreate(BaseModel):
+    """Schema for creating a refund reason."""
+    code: str
+    category: RefundCategory
+    display_name: str
+    description: Optional[str] = None
+    requires_approval: bool = False
+    auto_approve: bool = False
+    refund_percentage: int = 100
+
+class RefundReasonOut(BaseModel):
+    """Schema for refund reason data returned in API responses."""
+    id: int
+    code: str
+    category: RefundCategory
+    display_name: str
+    description: Optional[str]
+    requires_approval: bool
+    auto_approve: bool
+    refund_percentage: int
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+class OrderIssueCreate(BaseModel):
+    """Schema for reporting an order issue."""
+    order_id: int
+    issue_type: IssueType
+    description: Optional[str] = None
+    request_refund: bool = False
+
+class OrderIssueOut(BaseModel):
+    """Schema for order issue data returned in API responses."""
+    id: int
+    order_id: int
+    reported_by_user_id: int
+    reporter_role: Optional[Role]
+    issue_type: IssueType
+    description: Optional[str]
+    status: IssueStatus
+    assigned_to_user_id: Optional[int]
+    resolution_notes: Optional[str]
+    reported_at: datetime
+    resolved_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+class OrderIssueResolve(BaseModel):
+    """Schema for resolving an order issue."""
+    resolution_notes: Optional[str] = None
+    refund_approved: bool = False
+    refund_amount: Optional[float] = None
+
+# Wait Time Tracking Schemas
+class WaitTimeEstimate(BaseModel):
+    """Schema for live wait time estimate for an order."""
+    order_id: int
+    status: OrderStatus
+    
+    # Preparation phase timing
+    prep_started_at: Optional[datetime] = None
+    estimated_prep_minutes: Optional[int] = None
+    prep_remaining_minutes: Optional[int] = None
+    prep_elapsed_minutes: Optional[int] = None
+    
+    # Delivery phase timing
+    ready_at: Optional[datetime] = None
+    picked_up_at: Optional[datetime] = None
+    estimated_delivery_minutes: Optional[int] = None
+    delivery_remaining_minutes: Optional[int] = None
+    
+    # Driver location (if in transit)
+    driver_lat: Optional[float] = None
+    driver_lng: Optional[float] = None
+    driver_distance_km: Optional[float] = None
+    
+    # Overall estimates
+    total_estimated_minutes: Optional[int] = None
+    estimated_completion_time: Optional[datetime] = None
+    
+    # Metadata
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class SetPrepTimeRequest(BaseModel):
+    """Schema for cafe to set estimated preparation time."""
+    estimated_prep_minutes: int

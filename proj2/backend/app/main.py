@@ -24,6 +24,8 @@ from .routers import admin as admin_router
 from .routers import analytics as analytics_router
 from .routers import drivers as drivers_router
 from .routers import ocr as ocr_router
+from .routers import staff as staff_router
+from .routers import refunds as refunds_router
 from app.routers import reviews
 
 
@@ -57,6 +59,8 @@ app.include_router(admin_router.router)
 app.include_router(analytics_router.router)
 app.include_router(drivers_router.router)
 app.include_router(ocr_router.router)
+app.include_router(staff_router.router)
+app.include_router(refunds_router.router)
 
 @app.get("/")
 def root():

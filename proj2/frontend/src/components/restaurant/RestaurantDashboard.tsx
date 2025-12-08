@@ -29,10 +29,17 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
-import { Calendar, Bell, ChefHat, DollarSign, Package, TrendingUp, Clock, Users } from 'lucide-react';
-import { Order, OrderStatus, User } from '../../api/types';
-import { ordersApi } from '../../api';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Calendar, Bell, ChefHat, DollarSign, Package, TrendingUp, Clock, Users, Eye, Truck, RefreshCw, Shuffle } from 'lucide-react';
+import { Order, OrderStatus, User, OrderSummary } from '../../api/types';
+import { ordersApi, driversApi } from '../../api';
+import { IdleDriverInfo } from '../../api/drivers';
 import { useAuth } from '../../contexts/AuthContext';
+import StaffManagement from './StaffManagement';
+import StaffOrdersView from '../staff/StaffOrdersView';
+import { toast } from 'sonner';
 
 interface RestaurantDashboardProps {
   user: User;
@@ -50,6 +57,12 @@ const RestaurantDashboard: React.FC = () => {
     avgOrderValue: 0,
     pendingOrders: 0,
   });
+  const [selectedOrder, setSelectedOrder] = useState<OrderSummary | null>(null);
+  const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);
+  const [availableDrivers, setAvailableDrivers] = useState<IdleDriverInfo[]>([]);
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
+  const [assigningDriver, setAssigningDriver] = useState(false);
+  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
 
   // ✅ Compute dynamic stats
   const computeStats = (orders: Order[]) => {
@@ -124,6 +137,142 @@ useEffect(() => {
     }
   };
 
+  const loadAvailableDrivers = async () => {
+    const { data, error } = await driversApi.getAvailableDrivers();
+    if (data) {
+      setAvailableDrivers(data);
+    } else if (error) {
+      console.error('Failed to load available drivers:', error);
+    }
+  };
+
+  const viewOrderDetails = async (orderId: number) => {
+    setLoadingOrderDetails(true);
+    const { data, error } = await ordersApi.getOrderSummary(orderId);
+
+    if (error) {
+      toast.error(`Failed to load order details: ${error}`);
+      setLoadingOrderDetails(false);
+      return;
+    }
+
+    if (data) {
+      setSelectedOrder(data);
+      setIsOrderDialogOpen(true);
+      // Load available drivers when opening dialog
+      await loadAvailableDrivers();
+    }
+
+    setLoadingOrderDetails(false);
+  };
+
+  const reassignDriver = async (orderId: number) => {
+    const { data, error } = await ordersApi.retryDriverAssignment(orderId);
+
+    if (error) {
+      toast.error(`Failed to reassign driver: ${error}`);
+      return;
+    }
+
+    if (data) {
+      toast.success(data.message || 'Driver reassigned successfully');
+      // Reload orders to get updated data
+      if (user?.cafe?.id) {
+        const { data: updatedOrders } = await ordersApi.getCafeOrders(user.cafe.id);
+        if (updatedOrders) {
+          const orderArray = Array.isArray(updatedOrders) ? updatedOrders : updatedOrders ? [updatedOrders] : [];
+          setOrders(orderArray);
+          computeStats(orderArray);
+        }
+      }
+      // Refresh order details if the dialog is open
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+  };
+
+  const assignSpecificDriver = async (orderId: number) => {
+    if (!selectedDriverId) {
+      toast.error('Please select a driver first');
+      return;
+    }
+
+    setAssigningDriver(true);
+    const { data, error } = await ordersApi.assignSpecificDriver(orderId, parseInt(selectedDriverId));
+
+    if (error) {
+      toast.error(`Failed to assign driver: ${error}`);
+      setAssigningDriver(false);
+      return;
+    }
+
+    if (data) {
+      toast.success('Driver assigned successfully');
+      setSelectedDriverId('');
+      // Reload orders
+      if (user?.cafe?.id) {
+        const { data: updatedOrders } = await ordersApi.getCafeOrders(user.cafe.id);
+        if (updatedOrders) {
+          const orderArray = Array.isArray(updatedOrders) ? updatedOrders : updatedOrders ? [updatedOrders] : [];
+          setOrders(orderArray);
+          computeStats(orderArray);
+        }
+      }
+      // Refresh order details
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+    setAssigningDriver(false);
+  };
+
+  const autoAssignDriver = async (orderId: number) => {
+    setAssigningDriver(true);
+    const { data, error } = await ordersApi.autoAssignDriver(orderId);
+
+    if (error) {
+      toast.error(`Failed to auto-assign driver: ${error}`);
+      setAssigningDriver(false);
+      return;
+    }
+
+    if (data) {
+      toast.success('Driver auto-assigned successfully');
+      setSelectedDriverId('');
+      // Reload orders
+      if (user?.cafe?.id) {
+        const { data: updatedOrders } = await ordersApi.getCafeOrders(user.cafe.id);
+        if (updatedOrders) {
+          const orderArray = Array.isArray(updatedOrders) ? updatedOrders : updatedOrders ? [updatedOrders] : [];
+          setOrders(orderArray);
+          computeStats(orderArray);
+        }
+      }
+      // Refresh order details
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+    setAssigningDriver(false);
+  };
+
+  const getStatusBadge = (status: OrderStatus) => {
+    const statusConfig: Record<OrderStatus, { variant: 'default' | 'secondary' | 'destructive' | 'outline', color: string }> = {
+      PENDING: { variant: 'outline', color: 'text-yellow-600' },
+      ACCEPTED: { variant: 'default', color: 'text-blue-600' },
+      DECLINED: { variant: 'destructive', color: 'text-red-600' },
+      READY: { variant: 'default', color: 'text-green-600' },
+      PICKED_UP: { variant: 'secondary', color: 'text-purple-600' },
+      CANCELLED: { variant: 'destructive', color: 'text-red-600' },
+      REFUNDED: { variant: 'destructive', color: 'text-red-600' },
+      DELIVERED: { variant: 'secondary', color: 'text-green-600' },
+    };
+
+    const config = statusConfig[status];
+    return <Badge variant={config.variant} className={config.color}>{status}</Badge>;
+  };
+
   // ✅ Dynamic recent orders - sorted by most recent, limited to 5
   const recentOrders = orders
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -136,22 +285,6 @@ useEffect(() => {
     { title: 'Analytics', description: 'View performance reports', icon: TrendingUp, href: '/restaurant/analytics', color: 'bg-orange-50 text-orange-600' },
     { title: 'Review Insights', description: 'AI-powered feedback analysis', icon: Bell, href: '/restaurant/reviews', color: 'bg-pink-50 text-pink-600' }
   ];
-
-  // ✅ For UI badge colors
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "PENDING":
-        return "bg-yellow-50 text-yellow-700";
-      case "ACCEPTED":
-        return "bg-blue-50 text-blue-700";
-      case "READY":
-        return "bg-green-50 text-green-700";
-      case "PICKED_UP":
-        return "bg-gray-50 text-gray-700";
-      default:
-        return "bg-gray-50 text-gray-700";
-    }
-  };
 
   if (loading) {
     return (
@@ -170,6 +303,24 @@ useEffect(() => {
           Welcome back, {user?.name}! Here's what's happening today.
         </p>
       </div>
+
+      {/* Tabs for different sections */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className={`grid w-full ${user?.role === 'OWNER' ? 'grid-cols-5' : 'grid-cols-4'}`}>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+          {user?.role === 'OWNER' && (
+            <TabsTrigger value="staff">
+              <Users className="h-4 w-4 mr-2" />
+              Staff
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="menu">Menu</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+        </TabsList>
+
+        {/* Overview Tab - Existing Dashboard Content */}
+        <TabsContent value="overview" className="space-y-6">
 
       {/* Stats Overview */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -242,17 +393,16 @@ useEffect(() => {
                   <div className="flex-1">
                     <div className="flex items-center gap-2">
                       <h4 className="font-medium">Order #{order.id}</h4>
-                      <Badge className={getStatusColor(order.status)}>
-                        {order.status.charAt(0).toUpperCase() + order.status.slice(1).toLowerCase()}
-                      </Badge>
+                      {getStatusBadge(order.status)}
                     </div>
                     <p className="text-sm text-muted-foreground">
                       ${order.total_price.toFixed(2)} • {new Date(order.created_at).toLocaleTimeString()}
+                      {order.driver_id && ` • Driver #${order.driver_id}`}
                     </p>
                   </div>
                   <div className="flex gap-2">
                     {order.status === 'PENDING' && (
-                      <Button 
+                      <Button
                         size="sm"
                         onClick={() => handleStatusUpdate(order.id, 'ACCEPTED')}
                       >
@@ -260,8 +410,8 @@ useEffect(() => {
                       </Button>
                     )}
                     {order.status === 'ACCEPTED' && (
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="outline"
                         onClick={() => handleStatusUpdate(order.id, 'READY')}
                       >
@@ -269,17 +419,22 @@ useEffect(() => {
                       </Button>
                     )}
                     {order.status === 'READY' && (
-                      <Button 
-                        size="sm" 
+                      <Button
+                        size="sm"
                         variant="secondary"
                         onClick={() => handleStatusUpdate(order.id, 'PICKED_UP')}
                       >
                         Mark Picked
                       </Button>
                     )}
-                    <Link to={`/restaurant/orders`}>
-                      <Button variant="ghost" size="sm">View</Button>
-                    </Link>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => viewOrderDetails(order.id)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      View
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -342,6 +497,219 @@ useEffect(() => {
           </div> */}
         {/* </CardContent> */}
       {/* </Card> */}
+        </TabsContent>
+
+        {/* Orders Tab - Use StaffOrdersView */}
+        <TabsContent value="orders">
+          <StaffOrdersView />
+        </TabsContent>
+
+        {/* Staff Tab - Show StaffManagement */}
+        <TabsContent value="staff">
+          <StaffManagement user={user as any} />
+        </TabsContent>
+
+        {/* Menu Tab - Placeholder */}
+        <TabsContent value="menu">
+          <Card>
+            <CardHeader>
+              <CardTitle>Menu Management</CardTitle>
+              <CardDescription>Add, edit, or remove menu items</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/restaurant/menu">Go to Menu Management</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Analytics Tab - Placeholder */}
+        <TabsContent value="analytics">
+          <Card>
+            <CardHeader>
+              <CardTitle>Analytics & Reports</CardTitle>
+              <CardDescription>View your restaurant performance metrics</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button asChild>
+                <Link to="/restaurant/analytics">View Full Analytics</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Order Details Dialog */}
+      <Dialog open={isOrderDialogOpen} onOpenChange={setIsOrderDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Order #{selectedOrder?.id} Details</DialogTitle>
+            <DialogDescription>
+              {selectedOrder && getStatusBadge(selectedOrder.status)}
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingOrderDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">Loading order details...</p>
+            </div>
+          ) : selectedOrder ? (
+            <div className="space-y-6">
+              {/* Order Summary */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg">Order Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Order ID</p>
+                    <p className="font-medium">#{selectedOrder.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <div className="mt-1">{getStatusBadge(selectedOrder.status)}</div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Price</p>
+                    <p className="font-medium">${selectedOrder.total_price.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Calories</p>
+                    <p className="font-medium">{selectedOrder.total_calories} cal</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Created At</p>
+                    <p className="font-medium">{new Date(selectedOrder.created_at).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Driver Information */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  Driver Information
+                </h3>
+                {selectedOrder.driver_info ? (
+                  <div className="bg-muted p-4 rounded-lg space-y-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Driver ID</p>
+                        <p className="font-medium">#{selectedOrder.driver_info.driver_id}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Driver Email</p>
+                        <p className="font-medium">{selectedOrder.driver_info.driver_email}</p>
+                      </div>
+                    </div>
+                    {['ACCEPTED', 'READY'].includes(selectedOrder.status) && (
+                      <div className="space-y-3 mt-2">
+                        <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a different driver..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDrivers.map(driver => (
+                              <SelectItem key={driver.driver_id} value={driver.driver_id.toString()}>
+                                {driver.driver_name} ({driver.driver_email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => assignSpecificDriver(selectedOrder.id)}
+                            disabled={!selectedDriverId || assigningDriver}
+                            className="flex-1"
+                          >
+                            <Truck className="h-4 w-4 mr-2" />
+                            Assign Selected
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => autoAssignDriver(selectedOrder.id)}
+                            disabled={assigningDriver}
+                            className="flex-1"
+                          >
+                            <Shuffle className="h-4 w-4 mr-2" />
+                            Auto-Assign
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-muted p-4 rounded-lg">
+                    <p className="text-sm text-muted-foreground">No driver assigned yet</p>
+                    {['ACCEPTED', 'READY'].includes(selectedOrder.status) && (
+                      <div className="space-y-3 mt-2">
+                        <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a driver..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDrivers.map(driver => (
+                              <SelectItem key={driver.driver_id} value={driver.driver_id.toString()}>
+                                {driver.driver_name} ({driver.driver_email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => assignSpecificDriver(selectedOrder.id)}
+                            disabled={!selectedDriverId || assigningDriver}
+                            className="flex-1"
+                          >
+                            <Truck className="h-4 w-4 mr-2" />
+                            Assign Selected
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => autoAssignDriver(selectedOrder.id)}
+                            disabled={assigningDriver}
+                            className="flex-1"
+                          >
+                            <Shuffle className="h-4 w-4 mr-2" />
+                            Auto-Assign
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Order Items */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg">Order Items</h3>
+                <div className="space-y-2">
+                  {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                    selectedOrder.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Quantity: {item.quantity} • {item.subtotal_calories} cal
+                          </p>
+                        </div>
+                        <p className="font-semibold">${item.subtotal_price.toFixed(2)}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No items found</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

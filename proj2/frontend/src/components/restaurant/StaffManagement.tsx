@@ -37,15 +37,17 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 import { Plus, Edit, Trash2, Users, Shield, Key } from 'lucide-react';
 import { User } from '../../App';
 import { toast } from 'sonner';
+import { staffApi, StaffMember as ApiStaffMember, StaffRole } from '../../api';
 
 interface StaffMember {
-  id: string;
+  id: number;
+  user_id: number;
   name: string;
   email: string;
-  role: 'staff' | 'manager' | 'kitchen_staff';
+  role: StaffRole;
   permissions: string[];
   isActive: boolean;
-  joinedDate: Date;
+  joinedDate?: Date;
   lastLogin?: Date;
 }
 
@@ -57,16 +59,18 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
-  
+  const [loading, setLoading] = useState(true);
+  const [newUserEmail, setNewUserEmail] = useState('');
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'staff' as StaffMember['role'],
+    role: 'STAFF' as StaffRole,
     permissions: [] as string[]
   });
 
   // Only show staff management if user is restaurant owner
-  if (user.type !== 'restaurant_owner') {
+  if (user.role !== 'OWNER') {
     return (
       <div className="space-y-6">
         <Card className="text-center py-12">
@@ -80,42 +84,51 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
     );
   }
 
+  // Load staff members from API
   useEffect(() => {
-    // Mock staff data
-    const mockStaff: StaffMember[] = [
-      {
-        id: '1',
-        name: 'Sarah Johnson',
-        email: 'sarah@pizzapalace.com',
-        role: 'manager',
-        permissions: ['orders', 'menu', 'staff'],
-        isActive: true,
-        joinedDate: new Date('2023-01-15'),
-        lastLogin: new Date(Date.now() - 2 * 60 * 60 * 1000)
-      },
-      {
-        id: '2',
-        name: 'Mike Chen',
-        email: 'mike@pizzapalace.com',
-        role: 'kitchen_staff',
-        permissions: ['orders'],
-        isActive: true,
-        joinedDate: new Date('2023-03-20'),
-        lastLogin: new Date(Date.now() - 30 * 60 * 1000)
-      },
-      {
-        id: '3',
-        name: 'Lisa Rodriguez',
-        email: 'lisa@pizzapalace.com',
-        role: 'staff',
-        permissions: ['orders'],
-        isActive: false,
-        joinedDate: new Date('2023-02-10'),
-        lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      }
-    ];
-    setStaffMembers(mockStaff);
-  }, []);
+    loadStaff();
+  }, [user.cafe?.id]);
+
+  const loadStaff = async () => {
+    if (!user.cafe?.id) return;
+
+    setLoading(true);
+    const { data, error } = await staffApi.getCafeStaff(user.cafe.id);
+
+    if (error) {
+      toast.error(`Failed to load staff: ${error}`);
+      setLoading(false);
+      return;
+    }
+
+    if (data) {
+      // Convert API data to component format
+      const formattedStaff: StaffMember[] = data.map((member: ApiStaffMember) => ({
+        id: member.id,
+        user_id: member.user_id,
+        name: member.name,
+        email: member.email,
+        role: member.role,
+        permissions: getRolePermissions(member.role),
+        isActive: member.is_active,
+        joinedDate: undefined,
+        lastLogin: undefined
+      }));
+      setStaffMembers(formattedStaff);
+    }
+
+    setLoading(false);
+  };
+
+  const getRolePermissions = (role: StaffRole): string[] => {
+    const rolePermissionsMap: Record<StaffRole, string[]> = {
+      STAFF: ['orders'],
+      OWNER: ['orders', 'menu', 'analytics', 'staff'],
+      ADMIN: ['orders', 'menu', 'analytics', 'staff'],
+      USER: []
+    };
+    return rolePermissionsMap[role] || [];
+  };
 
   const availablePermissions = [
     { id: 'orders', label: 'Manage Orders', description: 'Accept, decline, and update order status' },
@@ -124,19 +137,21 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
     { id: 'staff', label: 'Manage Staff', description: 'Add and manage staff accounts (managers only)' }
   ];
 
-  const rolePermissions = {
-    staff: ['orders'],
-    kitchen_staff: ['orders'],
-    manager: ['orders', 'menu', 'analytics', 'staff']
+  const rolePermissionsDisplay: Record<StaffRole, string[]> = {
+    STAFF: ['orders'],
+    OWNER: ['orders', 'menu', 'analytics', 'staff'],
+    ADMIN: ['orders', 'menu', 'analytics', 'staff'],
+    USER: []
   };
 
   const resetForm = () => {
     setFormData({
       name: '',
       email: '',
-      role: 'staff',
+      role: 'STAFF',
       permissions: []
     });
+    setNewUserEmail('');
     setEditingStaff(null);
   };
 
@@ -151,67 +166,117 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
     setIsDialogOpen(true);
   };
 
-  const handleRoleChange = (role: StaffMember['role']) => {
+  const handleRoleChange = (role: StaffRole) => {
     setFormData(prev => ({
       ...prev,
       role,
-      permissions: rolePermissions[role]
+      permissions: rolePermissionsDisplay[role]
     }));
   };
 
-  const handleSave = () => {
-    if (!formData.name || !formData.email) {
-      toast.error('Please fill in all required fields');
+  const handleSave = async () => {
+    if (!user.cafe?.id) {
+      toast.error('No cafe associated with your account');
       return;
     }
 
-    const staffData: StaffMember = {
-      id: editingStaff?.id || Date.now().toString(),
-      name: formData.name,
-      email: formData.email,
-      role: formData.role,
-      permissions: formData.permissions,
-      isActive: editingStaff?.isActive ?? true,
-      joinedDate: editingStaff?.joinedDate || new Date(),
-      lastLogin: editingStaff?.lastLogin
-    };
-
     if (editingStaff) {
-      setStaffMembers(prev => prev.map(staff => staff.id === editingStaff.id ? staffData : staff));
+      // Update existing staff member's role
+      const { data, error } = await staffApi.updateStaffRole(editingStaff.id, formData.role);
+
+      if (error) {
+        toast.error(`Failed to update staff member: ${error}`);
+        return;
+      }
+
       toast.success('Staff member updated successfully');
+      setIsDialogOpen(false);
+      resetForm();
+      loadStaff();
     } else {
-      setStaffMembers(prev => [...prev, staffData]);
-      toast.success(`Staff member added successfully. Login credentials sent to ${formData.email}`);
+      // Add new staff by email
+      if (!newUserEmail) {
+        toast.error('Please enter an email address');
+        return;
+      }
+
+      const { data, error } = await staffApi.assignStaffByEmail({
+        email: newUserEmail,
+        cafe_id: user.cafe.id,
+        role: formData.role
+      });
+
+      if (error) {
+        if (error.includes('not found')) {
+          toast.error(`No user registered with email: ${newUserEmail}. They need to register first.`);
+        } else if (error.includes('already assigned')) {
+          toast.error('This user is already assigned to your cafe');
+        } else {
+          toast.error(`Failed to add staff: ${error}`);
+        }
+        return;
+      }
+
+      toast.success(`Staff member added successfully!`);
+      setIsDialogOpen(false);
+      resetForm();
+      loadStaff();
+    }
+  };
+
+  const toggleStaffStatus = async (assignmentId: number) => {
+    const { data, error } = await staffApi.toggleStaffActive(assignmentId);
+
+    if (error) {
+      toast.error(`Failed to toggle staff status: ${error}`);
+      return;
     }
 
-    setIsDialogOpen(false);
-    resetForm();
+    if (data) {
+      toast.success(data.message);
+      loadStaff();
+    }
   };
 
-  const toggleStaffStatus = (staffId: string) => {
-    setStaffMembers(prev => prev.map(staff => 
-      staff.id === staffId ? { ...staff, isActive: !staff.isActive } : staff
-    ));
-    const staff = staffMembers.find(s => s.id === staffId);
-    toast.success(`${staff?.name} ${staff?.isActive ? 'deactivated' : 'activated'} successfully`);
-  };
+  const deleteStaff = async (assignmentId: number) => {
+    if (!confirm('Are you sure you want to remove this staff member?')) {
+      return;
+    }
 
-  const deleteStaff = (staffId: string) => {
-    setStaffMembers(prev => prev.filter(staff => staff.id !== staffId));
+    const { data, error } = await staffApi.removeStaff(assignmentId);
+
+    if (error) {
+      toast.error(`Failed to remove staff member: ${error}`);
+      return;
+    }
+
     toast.success('Staff member removed successfully');
+    loadStaff();
   };
 
-  const getRoleBadgeColor = (role: StaffMember['role']) => {
+  const getRoleBadgeColor = (role: StaffRole) => {
     switch (role) {
-      case 'manager':
+      case 'OWNER':
         return 'bg-purple-100 text-purple-800';
-      case 'kitchen_staff':
-        return 'bg-orange-100 text-orange-800';
-      case 'staff':
+      case 'ADMIN':
+        return 'bg-red-100 text-red-800';
+      case 'STAFF':
         return 'bg-blue-100 text-blue-800';
+      case 'USER':
+        return 'bg-gray-100 text-gray-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
+  };
+
+  const getRoleDisplayName = (role: StaffRole) => {
+    const roleNames: Record<StaffRole, string> = {
+      STAFF: 'Staff',
+      OWNER: 'Owner',
+      ADMIN: 'Admin',
+      USER: 'User'
+    };
+    return roleNames[role] || role;
   };
 
   const getInitials = (name: string) => {
@@ -238,88 +303,118 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
                 {editingStaff ? 'Edit Staff Member' : 'Add New Staff Member'}
               </DialogTitle>
               <DialogDescription>
-                {editingStaff ? 'Update staff member details and permissions' : 'Create a new staff account with appropriate permissions'}
+                {editingStaff
+                  ? 'Update staff member role and permissions'
+                  : 'Enter the email of a registered user to assign them as staff'}
               </DialogDescription>
             </DialogHeader>
-            
+
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="name">Full Name *</Label>
-                <Input
-                  id="name"
-                  value={formData.name}
-                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                  placeholder="Enter full name"
-                />
-              </div>
+              {!editingStaff ? (
+                // Adding new staff - only show email input
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email Address *</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={newUserEmail}
+                      onChange={(e) => setNewUserEmail(e.target.value)}
+                      placeholder="staff@example.com"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      The user must already be registered. They can register at the login page using the "Staff" tab.
+                    </p>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address *</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                  placeholder="Enter email address"
-                />
-              </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Role</Label>
+                    <Select value={formData.role} onValueChange={handleRoleChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="STAFF">Staff</SelectItem>
+                        <SelectItem value="OWNER">Owner</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select value={formData.role} onValueChange={handleRoleChange}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="staff">Front Desk Staff</SelectItem>
-                    <SelectItem value="kitchen_staff">Kitchen Staff</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Permissions</Label>
-                <div className="space-y-2">
-                  {availablePermissions.map((permission) => (
-                    <div key={permission.id} className="flex items-start space-x-2">
-                      <input
-                        type="checkbox"
-                        id={permission.id}
-                        checked={formData.permissions.includes(permission.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData(prev => ({
-                              ...prev,
-                              permissions: [...prev.permissions, permission.id]
-                            }));
-                          } else {
-                            setFormData(prev => ({
-                              ...prev,
-                              permissions: prev.permissions.filter(p => p !== permission.id)
-                            }));
-                          }
-                        }}
-                        className="mt-1"
-                      />
-                      <div className="space-y-1">
-                        <Label htmlFor={permission.id} className="text-sm">
-                          {permission.label}
-                        </Label>
-                        <p className="text-xs text-muted-foreground">
-                          {permission.description}
-                        </p>
-                      </div>
+                  <div className="space-y-2">
+                    <Label>Permissions (based on role)</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {rolePermissionsDisplay[formData.role].map((permId) => {
+                        const perm = availablePermissions.find(p => p.id === permId);
+                        return perm ? (
+                          <Badge key={permId} variant="outline" className="text-xs">
+                            {perm.label}
+                          </Badge>
+                        ) : null;
+                      })}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                </>
+              ) : (
+                // Editing existing staff - show all fields
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="name">Full Name</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="email">Email Address</Label>
+                    <Input
+                      id="email"
+                      type="email"
+                      value={formData.email}
+                      disabled
+                      className="bg-muted"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Role</Label>
+                    <Select value={formData.role} onValueChange={handleRoleChange}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="STAFF">Staff</SelectItem>
+                        <SelectItem value="OWNER">Owner</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Permissions (based on role)</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {rolePermissionsDisplay[formData.role].map((permId) => {
+                        const perm = availablePermissions.find(p => p.id === permId);
+                        return perm ? (
+                          <Badge key={permId} variant="outline" className="text-xs">
+                            {perm.label}
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex justify-end gap-2 pt-4">
                 <Button variant="outline" onClick={() => setIsDialogOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleSave}>
+                <Button
+                  onClick={handleSave}
+                  disabled={!editingStaff && !newUserEmail.trim()}
+                >
                   {editingStaff ? 'Update' : 'Add'} Staff Member
                 </Button>
               </div>
@@ -354,24 +449,24 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Managers</CardTitle>
+            <CardTitle className="text-sm font-medium">Owners</CardTitle>
             <Shield className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-purple-600">
-              {staffMembers.filter(s => s.role === 'manager').length}
+              {staffMembers.filter(s => s.role === 'OWNER').length}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Kitchen Staff</CardTitle>
-            <Users className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">Staff</CardTitle>
+            <Users className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {staffMembers.filter(s => s.role === 'kitchen_staff').length}
+            <div className="text-2xl font-bold text-blue-600">
+              {staffMembers.filter(s => s.role === 'STAFF').length}
             </div>
           </CardContent>
         </Card>
@@ -384,7 +479,11 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
           <CardDescription>Manage your team's access and permissions</CardDescription>
         </CardHeader>
         <CardContent>
-          {staffMembers.length === 0 ? (
+          {loading ? (
+            <div className="text-center py-12">
+              <p className="text-muted-foreground">Loading staff members...</p>
+            </div>
+          ) : staffMembers.length === 0 ? (
             <div className="text-center py-12">
               <Users className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium">No staff members</h3>
@@ -403,7 +502,7 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
                         <div className="flex items-center space-x-2">
                           <h4 className="font-medium">{staff.name}</h4>
                           <Badge className={getRoleBadgeColor(staff.role)}>
-                            {staff.role.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                            {getRoleDisplayName(staff.role)}
                           </Badge>
                           {!staff.isActive && (
                             <Badge variant="outline" className="text-red-600 border-red-200">
@@ -413,7 +512,7 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
                         </div>
                         <p className="text-sm text-muted-foreground">{staff.email}</p>
                         <div className="flex items-center space-x-4 text-xs text-muted-foreground">
-                          <span>Joined {staff.joinedDate.toLocaleDateString()}</span>
+                          {staff.joinedDate && <span>Joined {staff.joinedDate.toLocaleDateString()}</span>}
                           {staff.lastLogin && (
                             <span>Last login {staff.lastLogin.toLocaleString()}</span>
                           )}
@@ -472,9 +571,9 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
           <CardDescription>Understanding staff roles and their access levels</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <h4 className="font-medium">Front Desk Staff</h4>
+              <h4 className="font-medium">Staff</h4>
               <p className="text-sm text-muted-foreground">
                 Can accept and manage orders, update order status, and interact with customers.
               </p>
@@ -483,18 +582,9 @@ const StaffManagement: React.FC<StaffManagementProps> = ({ user }) => {
               </div>
             </div>
             <div className="space-y-2">
-              <h4 className="font-medium">Kitchen Staff</h4>
+              <h4 className="font-medium">Owner</h4>
               <p className="text-sm text-muted-foreground">
-                Can view and update order status, mark orders as ready for pickup.
-              </p>
-              <div className="flex flex-wrap gap-1">
-                <Badge variant="outline" className="text-xs">Manage Orders</Badge>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-medium">Manager</h4>
-              <p className="text-sm text-muted-foreground">
-                Full access to all restaurant operations including staff management.
+                Full access to all restaurant operations including staff management, menu, and analytics.
               </p>
               <div className="flex flex-wrap gap-1">
                 <Badge variant="outline" className="text-xs">All Permissions</Badge>

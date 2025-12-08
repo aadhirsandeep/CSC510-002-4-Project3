@@ -34,16 +34,21 @@ def test_cancel_after_window_fails(client, monkeypatch):
     order = r4.json()
 
     # Monkeypatch order.can_cancel_until to be in the past so cancel fails
-    # Direct DB update
-    from app.database import SessionLocal
-    db = SessionLocal()
+    # Use the test database session from the app's override
+    from app.main import app
+    from app.database import get_db
     from app.models import Order as OrderModel
-    o = db.query(OrderModel).filter(OrderModel.id == order["id"]).first()
     import datetime
-    o.can_cancel_until = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
-    db.add(o)
-    db.commit()
-    db.close()
+
+    db = next(app.dependency_overrides[get_db]())
+    try:
+        o = db.query(OrderModel).filter(OrderModel.id == order["id"]).first()
+        if o:
+            o.can_cancel_until = datetime.datetime.utcnow() - datetime.timedelta(seconds=1)
+            db.add(o)
+            db.commit()
+    finally:
+        db.close()
 
     r5 = client.post(f"/orders/{order['id']}/cancel", headers=hdr_user)
     # Depending on timing, the endpoint may either reject (400) or accept; ensure that final status is not PENDING

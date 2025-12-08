@@ -10,6 +10,7 @@
  */
 
 import { apiClient } from './client';
+import { CancelAndReassignResponse } from './types';
 
 export interface DriverLoginRequest {
   email: string;
@@ -57,9 +58,18 @@ export const driversApi = {
   return apiClient.post<AssignedOrderOut>(`/drivers/${driverId}/orders/${orderId}/deliver`);
   },
 
+  async rejectOrder(driverId: number, orderId: number) {
+    return apiClient.post<CancelAndReassignResponse>(`/drivers/${driverId}/orders/${orderId}/reject`);
+  },
+
   // Location
   async updateLocation(driverId: number, location: DriverLocationIn) {
     return apiClient.post(`/drivers/${driverId}/location`, location);
+  },
+
+  // Get available (idle) drivers
+  async getAvailableDrivers() {
+    return apiClient.get<IdleDriverInfo[]>('/drivers/available');
   },
 
   // WebSocket connection
@@ -67,3 +77,13 @@ export const driversApi = {
     return `ws://${window.location.host}/drivers/driver/${driverId}/ws`;
   }
 };
+
+export interface IdleDriverInfo {
+  driver_id: number;
+  driver_name: string;
+  driver_email: string;
+  lat: number;
+  lng: number;
+  status: string;
+  last_update: string;
+}

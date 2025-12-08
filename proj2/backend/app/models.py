@@ -147,6 +147,13 @@ class Order(Base):
     pickup_code = Column(String, nullable=True)
     total_price = Column(Float, default=0.0)
     total_calories = Column(Integer, default=0)
+    # Wait time tracking fields
+    estimated_prep_minutes = Column(Integer, nullable=True)  # Cafe sets this when accepting
+    prep_started_at = Column(DateTime, nullable=True)  # Set when status -> ACCEPTED
+    ready_at = Column(DateTime, nullable=True)  # Set when status -> READY
+    picked_up_at = Column(DateTime, nullable=True)  # Set when status -> PICKED_UP
+    delivered_at = Column(DateTime, nullable=True)  # Set when status -> DELIVERED
+    estimated_delivery_minutes = Column(Integer, nullable=True)  # Calculated from driver distance
 
 class OrderItem(Base):
     """OrderItem model representing an individual item within an order."""
@@ -190,8 +197,108 @@ class CalorieGoal(Base):
     target_calories = Column(Integer, nullable=False)
     start_date = Column(Date, nullable=False)
 
+class RefundCategory(str, enum.Enum):
+    """Refund category enumeration defining the type of issue."""
+    RESTAURANT_ISSUE = "RESTAURANT_ISSUE"
+    DRIVER_ISSUE = "DRIVER_ISSUE"
+    CUSTOMER_ISSUE = "CUSTOMER_ISSUE"
+    SYSTEM_ERROR = "SYSTEM_ERROR"
+    OTHER = "OTHER"
+
+class RefundStatus(str, enum.Enum):
+    """Refund status enumeration defining refund processing states."""
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    REJECTED = "REJECTED"
+    PROCESSED = "PROCESSED"
+    FAILED = "FAILED"
+
+class IssueType(str, enum.Enum):
+    """Issue type enumeration for order issues."""
+    QUALITY = "QUALITY"
+    DELAY = "DELAY"
+    CANCELLATION = "CANCELLATION"
+    DAMAGE = "DAMAGE"
+    NO_SHOW = "NO_SHOW"
+    OUT_OF_STOCK = "OUT_OF_STOCK"
+    OTHER = "OTHER"
+
+class IssueStatus(str, enum.Enum):
+    """Issue status enumeration for tracking issue resolution."""
+    REPORTED = "REPORTED"
+    INVESTIGATING = "INVESTIGATING"
+    RESOLVED = "RESOLVED"
+    DISMISSED = "DISMISSED"
+
+class Refund(Base):
+    """Refund model representing a refund for an order."""
+    __tablename__ = "refunds"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True)
+    payment_id = Column(Integer, ForeignKey("payments.id"), index=True, nullable=True)
+
+    # Financial details
+    original_amount = Column(Float, nullable=False)
+    refund_amount = Column(Float, nullable=False)
+    refund_percentage = Column(Float, nullable=True)
+
+    # Reason tracking
+    reason_category = Column(Enum(RefundCategory), nullable=False)
+    reason_code = Column(String, nullable=True)
+    reason_description = Column(Text, nullable=True)
+
+    # Process tracking
+    status = Column(Enum(RefundStatus), default=RefundStatus.PENDING)
+    initiated_by_user_id = Column(Integer, ForeignKey("users.id"))
+    approved_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Timestamps
+    requested_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, nullable=True)
+
+    # Payment provider tracking
+    provider_refund_id = Column(String, nullable=True)
+    provider_status = Column(String, nullable=True)
+
+class RefundReason(Base):
+    """RefundReason model defining predefined refund reasons with rules."""
+    __tablename__ = "refund_reasons"
+    id = Column(Integer, primary_key=True)
+    code = Column(String, unique=True, nullable=False)
+    category = Column(Enum(RefundCategory), nullable=False)
+    display_name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Business rules
+    requires_approval = Column(Boolean, default=False)
+    auto_approve = Column(Boolean, default=False)
+    refund_percentage = Column(Integer, default=100)  # 0-100
+    active = Column(Boolean, default=True)
+
+class OrderIssue(Base):
+    """OrderIssue model for tracking issues reported with orders."""
+    __tablename__ = "order_issues"
+    id = Column(Integer, primary_key=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), index=True)
+
+    # Issue details
+    reported_by_user_id = Column(Integer, ForeignKey("users.id"))
+    reporter_role = Column(Enum(Role), nullable=True)
+    issue_type = Column(Enum(IssueType), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Resolution
+    status = Column(Enum(IssueStatus), default=IssueStatus.REPORTED)
+    assigned_to_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+
+    # Timestamps
+    reported_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+
+# Legacy model - kept for backward compatibility
 class RefundRequest(Base):
-    """RefundRequest model representing a refund request for an order."""
+    """RefundRequest model representing a refund request for an order (legacy)."""
     __tablename__ = "refund_requests"
     id = Column(Integer, primary_key=True)
     order_id = Column(Integer, ForeignKey("orders.id"), index=True)

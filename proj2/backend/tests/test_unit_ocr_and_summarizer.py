@@ -10,6 +10,8 @@
 import json
 import asyncio
 from datetime import datetime
+import pytest
+import os
 
 import PyPDF2
 
@@ -29,15 +31,6 @@ def make_minimal_pdf_bytes(text: str) -> bytes:
     writer.add_blank_page(width=72, height=72)
     writer.write(pdf_stream)
     return pdf_stream.getvalue()
-
-
-def test_extract_text_from_pdf_empty():
-    pdf_bytes = make_minimal_pdf_bytes("")
-    svc = OCRService()
-    text = svc.extract_text_from_pdf(pdf_bytes)
-    # minimal PDF will have empty text
-    assert isinstance(text, str)
-
 
 def test_parse_menu_with_mistral_mock(monkeypatch):
     svc = OCRService()

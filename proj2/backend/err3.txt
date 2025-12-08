@@ -1,0 +1,140 @@
+C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\verify_fix.py:71: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+  now = datetime.utcnow().isoformat()
+DB URI in use: sqlite:///./app.db
+Starting verification...
+REGISTER activity_level = None
+owner_reassign_v@example.com
+opwd
+<app.models.User object at 0x00000245B1491090>
+$2b$12$EeVPUcirKQ8z5l.1T7HTu.TvUnp0JQDouNbBbH4G0Jy7Os2wbPK4S
+Create Cafe: 200
+Driver A: 14, Driver B: 15
+REGISTER activity_level = None
+u_reassign_v@example.com
+upwd
+<app.models.User object at 0x00000245B152F770>
+$2b$12$LPY735zInoLbqdysU4JO4.ETBCIL9HfR8lBp3cJPAm01.CRfiA0AK
+Place Order: 200
+Order ID: 24
+Traceback (most recent call last):
+  File "C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\verify_fix.py", line 118, in <module>
+    run()
+    ~~~^^
+  File "C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\verify_fix.py", line 84, in run
+    r = client.post(f"/orders/{order['id']}/status", json={"new_status": "ACCEPTED"}, headers=owner_hdr)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\testclient.py", line 546, in post
+    return super().post(
+           ~~~~~~~~~~~~^
+        url,
+        ^^^^
+    ...<10 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 1144, in post
+    return self.request(
+           ~~~~~~~~~~~~^
+        "POST",
+        ^^^^^^^
+    ...<11 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\testclient.py", line 445, in request
+    return super().request(
+           ~~~~~~~~~~~~~~~^
+        method,
+        ^^^^^^^
+    ...<11 lines>...
+        extensions=extensions,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 825, in request
+    return self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 914, in send
+    response = self._send_handling_auth(
+        request,
+    ...<2 lines>...
+        history=[],
+    )
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 942, in _send_handling_auth
+    response = self._send_handling_redirects(
+        request,
+        follow_redirects=follow_redirects,
+        history=history,
+    )
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 979, in _send_handling_redirects
+    response = self._send_single_request(request)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\httpx\_client.py", line 1014, in _send_single_request
+    response = transport.handle_request(request)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\testclient.py", line 348, in handle_request
+    raise exc
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\testclient.py", line 345, in handle_request
+    portal.call(self.app, scope, receive, send)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\anyio\from_thread.py", line 326, in call
+    return cast(T_Retval, self.start_task_soon(func, *args).result())
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py", line 456, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\anyio\from_thread.py", line 257, in _call_func
+    retval = await retval_or_awaitable
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\applications.py", line 1139, in __call__
+    await super().__call__(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\applications.py", line 107, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\errors.py", line 186, in __call__
+    raise exc
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 119, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 105, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 407, in app
+    content = await serialize_response(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<9 lines>...
+    )
+    ^
+  File "C:\Users\saha_\AppData\Local\Programs\Python\Python313\Lib\site-packages\fastapi\routing.py", line 248, in serialize_response
+    raise ResponseValidationError(
+        errors=_normalize_errors(errors), body=response_content
+    )
+fastapi.exceptions.ResponseValidationError: 6 validation errors:
+  {'type': 'missing', 'loc': ('response', 'id'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+  {'type': 'missing', 'loc': ('response', 'cafe_id'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+  {'type': 'missing', 'loc': ('response', 'created_at'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+  {'type': 'missing', 'loc': ('response', 'total_price'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+  {'type': 'missing', 'loc': ('response', 'total_calories'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+  {'type': 'missing', 'loc': ('response', 'can_cancel_until'), 'msg': 'Field required', 'input': WaitTimeEstimate(order_id=24, status=<OrderStatus.ACCEPTED: 'ACCEPTED'>, prep_started_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 444644), estimated_prep_minutes=12, prep_remaining_minutes=11, prep_elapsed_minutes=0, ready_at=None, picked_up_at=None, estimated_delivery_minutes=15, delivery_remaining_minutes=None, driver_lat=None, driver_lng=None, driver_distance_km=None, total_estimated_minutes=26, estimated_completion_time=datetime.datetime(2025, 12, 8, 7, 54, 55, 459638), updated_at=datetime.datetime(2025, 12, 8, 7, 28, 55, 459638))}
+

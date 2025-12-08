@@ -19,7 +19,7 @@ export interface ApiResponse<T = any> {
 export interface LoginRequest {
   email: string;
   password: string;
-  role?: 'USER' | 'OWNER' | 'DRIVER' | 'ADMIN';
+  role?: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
 }
 
 export interface LoginResponse {
@@ -30,14 +30,14 @@ export interface LoginResponse {
 export interface TokenPayload {
   sub: string;
   uid: number;
-  role: 'USER' | 'OWNER' | 'DRIVER'; 
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
   exp: number;
 }
 export interface User {
   id: number;
   email: string;
   name: string;
-  role: 'USER' | 'OWNER' | 'DRIVER'; 
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN';
   is_active: boolean;
   cafe?: Cafe;
   height_cm?: number;
@@ -78,7 +78,7 @@ export interface RegisterRequest {
   email: string;
   name: string;
   password: string;
-  role: 'USER' | 'OWNER' | 'DRIVER'; // ✅ added role here for registration
+  role: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER' | 'ADMIN'; // ✅ added role here for registration
   // Optional owner-specific fields
   cuisine?: string;
   address?: string;
@@ -200,11 +200,19 @@ export type OrderStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'READY' | 'PICKE
 export interface Order {
   id: number;
   cafe_id: number;
+  driver_id?: number | null;
   status: OrderStatus;
   created_at: string;
   total_price: number;
   total_calories: number;
   can_cancel_until: string;
+  pickup_code?: string | null;
+  estimated_prep_minutes?: number | null;
+  prep_started_at?: string | null;
+  ready_at?: string | null;
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
+  estimated_delivery_minutes?: number | null;
 }
 
 // Add these new types for order summaries
@@ -234,6 +242,14 @@ export interface OrderSummary {
 
 export interface PlaceOrderRequest {
   cafe_id: number;
+}
+
+export interface CancelAndReassignResponse {
+  order_id: number;
+  previous_driver_id: number | null;
+  new_driver_id: number | null;
+  new_driver_email: string | null;
+  message: string;
 }
 // Goal Types
 export interface CalorieGoal {
@@ -271,4 +287,145 @@ export interface RequestOptions {
   headers?: Record<string, string>;
   body?: any;
   requiresAuth?: boolean;
+}
+
+// Staff Management Types
+export type StaffRole = 'USER' | 'STAFF' | 'OWNER' | 'ADMIN';
+
+export interface StaffAssignmentCreate {
+  user_id: number;
+  cafe_id: number;
+  role?: StaffRole;
+}
+
+export interface StaffAssignByEmail {
+  email: string;
+  cafe_id: number;
+  role?: StaffRole;
+}
+
+export interface StaffAssignment {
+  id: number;
+  user_id: number;
+  cafe_id: number;
+  role: StaffRole;
+}
+
+export interface StaffMember {
+  id: number; // Assignment ID
+  user_id: number;
+  cafe_id: number;
+  name: string;
+  email: string;
+  role: StaffRole;
+  is_active: boolean;
+}
+
+// Refund Types
+export type RefundCategory = 'RESTAURANT_ISSUE' | 'DRIVER_ISSUE' | 'CUSTOMER_ISSUE' | 'SYSTEM_ERROR' | 'OTHER';
+export type RefundStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED' | 'FAILED';
+export type IssueType = 'QUALITY' | 'DELAY' | 'CANCELLATION' | 'DAMAGE' | 'NO_SHOW' | 'OUT_OF_STOCK' | 'OTHER';
+export type IssueStatus = 'REPORTED' | 'INVESTIGATING' | 'RESOLVED' | 'DISMISSED';
+
+export interface Refund {
+  id: number;
+  order_id: number;
+  payment_id?: number;
+  original_amount: number;
+  refund_amount: number;
+  refund_percentage?: number;
+  reason_category: RefundCategory;
+  reason_code?: string;
+  reason_description?: string;
+  status: RefundStatus;
+  initiated_by_user_id: number;
+  approved_by_user_id?: number;
+  requested_at: string;
+  processed_at?: string;
+  provider_refund_id?: string;
+  provider_status?: string;
+}
+
+export interface RefundCreate {
+  order_id: number;
+  reason_category: RefundCategory;
+  reason_code?: string;
+  reason_description?: string;
+  refund_amount?: number;
+  refund_percentage?: number;
+}
+
+export interface RefundApprove {
+  approved_amount?: number;
+  notes?: string;
+}
+
+export interface RefundReject {
+  rejection_reason: string;
+}
+
+export interface RefundReason {
+  id: number;
+  code: string;
+  category: RefundCategory;
+  display_name: string;
+  description?: string;
+  requires_approval: boolean;
+  auto_approve: boolean;
+  refund_percentage: number;
+  active: boolean;
+}
+
+export interface OrderIssue {
+  id: number;
+  order_id: number;
+  reported_by_user_id: number;
+  reporter_role?: string;
+  issue_type: IssueType;
+  description?: string;
+  status: IssueStatus;
+  assigned_to_user_id?: number;
+  resolution_notes?: string;
+  reported_at: string;
+  resolved_at?: string;
+}
+
+export interface OrderIssueCreate {
+  order_id: number;
+  issue_type: IssueType;
+  description?: string;
+  request_refund?: boolean;
+}
+// Wait Time Tracking Types
+export interface WaitTimeEstimate {
+  order_id: number;
+  status: OrderStatus;
+  
+  // Preparation phase timing
+  prep_started_at?: string | null;
+  estimated_prep_minutes?: number | null;
+  prep_remaining_minutes?: number | null;
+  prep_elapsed_minutes?: number | null;
+  
+  // Delivery phase timing
+  ready_at?: string | null;
+  picked_up_at?: string | null;
+  estimated_delivery_minutes?: number | null;
+  delivery_remaining_minutes?: number | null;
+  
+  // Driver location (if in transit)
+  driver_lat?: number | null;
+  driver_lng?: number | null;
+  driver_distance_km?: number | null;
+  
+  // Overall estimates
+  total_estimated_minutes?: number | null;
+  estimated_completion_time?: string | null;
+  
+  // Metadata
+  updated_at: string;
+}
+
+export interface SetPrepTimeRequest {
+  estimated_prep_minutes: number;
 }

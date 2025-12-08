@@ -12,14 +12,15 @@
  * @description User registration component for new account creation.
  * Features:
  * - Multi-step registration process
- * - Role selection (Customer/Restaurant Owner/Driver)
+ * - Role selection (Customer/Restaurant Owner/Staff/Driver)
  * - Form validation with real-time feedback
  * - Restaurant details for owner registration
+ * - Staff registration for cafe employees
  * - Driver details and vehicle information
  * - Terms and conditions acceptance
  * - Automatic login after registration
  * - Profile picture upload
- * 
+ *
  * Implements role-specific registration flows and validates
  * required information based on selected role.
  */
@@ -42,7 +43,7 @@ const RegisterPage: React.FC = () => {
     email: '',
     password: '',
     confirmPassword: '',
-  
+
     // USER fields
     name: '',
     height_cm: '',
@@ -50,14 +51,17 @@ const RegisterPage: React.FC = () => {
     dob: '',
     gender: '',
     activityLevel: '',
-  
+
     // OWNER fields
     restaurantName: '',
     cuisine: '',
     address: '',
     phone: '',
     timings: '',
-  
+
+    // STAFF fields
+    staffName: '',
+
     // DRIVER fields
     driverName: '',
     license: '',
@@ -73,23 +77,23 @@ const RegisterPage: React.FC = () => {
 
   const handleRegister = async (
     e: React.FormEvent,
-    userType: 'USER' | 'OWNER' | 'DRIVER'
+    userType: 'USER' | 'OWNER' | 'STAFF' | 'DRIVER'
   ) => {
     e.preventDefault();
     clearError();
-  
+
     if (formData.password !== formData.confirmPassword) {
       toast.error('Passwords do not match');
       return;
     }
-  
+
     if (formData.password.length < 6) {
       toast.error('Password must be at least 6 characters');
       return;
     }
-  
+
     console.log('calling register from tsx:');
-    
+
     const registeredUser = await register({
       email: formData.email,
       name:
@@ -97,6 +101,8 @@ const RegisterPage: React.FC = () => {
           ? formData.name
           : userType === 'OWNER'
           ? formData.restaurantName
+          : userType === 'STAFF'
+          ? formData.staffName
           : userType === 'DRIVER'
           ? formData.driverName
           : '',
@@ -108,6 +114,8 @@ const RegisterPage: React.FC = () => {
           ? 'USER'
           : userType === 'OWNER'
           ? 'OWNER'
+          : userType === 'STAFF'
+          ? 'STAFF'
           : userType === 'DRIVER'
           ? 'DRIVER'
           : 'USER',
@@ -157,10 +165,11 @@ const RegisterPage: React.FC = () => {
       const redirects: Record<string, string> = {
         USER: '/dashboard',
         OWNER: '/restaurant/dashboard',
+        STAFF: '/restaurant/dashboard',
         DRIVER: '/driver/dashboard',
       };
-      
-      navigate(redirects[registeredUser.role] || '/dashboard', { replace: true });
+
+      navigate(redirects[registeredUser.role] || '/dashboard', { replace: true});
     } else {
       toast.error(error || 'Registration failed');
     }
@@ -177,10 +186,11 @@ const RegisterPage: React.FC = () => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="customer" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="customer">Customer</TabsTrigger>
               <TabsTrigger value="restaurant">Restaurant</TabsTrigger>
-              <TabsTrigger value="driver">Driver</TabsTrigger> 
+              <TabsTrigger value="staff">Staff</TabsTrigger>
+              <TabsTrigger value="driver">Driver</TabsTrigger>
             </TabsList>
             
             <TabsContent value="customer" className="space-y-4">
@@ -411,6 +421,68 @@ const RegisterPage: React.FC = () => {
                 )}
                 <Button type="submit" className="w-full" disabled={isLoading}>
                   {isLoading ? 'Creating Account...' : 'Create Restaurant Account'}
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="staff" className="space-y-4">
+              <form onSubmit={(e) => handleRegister(e, 'STAFF')} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="staffName">Full Name</Label>
+                  <Input
+                    id="staffName"
+                    placeholder="Enter your full name"
+                    value={formData.staffName}
+                    onChange={(e) => handleInputChange('staffName', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email-staff">Email</Label>
+                  <Input
+                    id="email-staff"
+                    type="email"
+                    placeholder="Your email address"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange('email', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password-staff">Password</Label>
+                  <Input
+                    id="password-staff"
+                    type="password"
+                    placeholder="Create a password (min 6 characters)"
+                    value={formData.password}
+                    onChange={(e) => handleInputChange('password', e.target.value)}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword-staff">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword-staff"
+                    type="password"
+                    placeholder="Confirm your password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> After registration, you'll need to be assigned to a cafe by a restaurant owner before you can start managing orders.
+                  </p>
+                </div>
+                {error && (
+                  <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                    {error}
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={isLoading}>
+                  {isLoading ? 'Creating Account...' : 'Create Staff Account'}
                 </Button>
               </form>
             </TabsContent>

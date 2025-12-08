@@ -10,7 +10,7 @@
  */
 
 import { apiClient } from './client';
-import { Order, PlaceOrderRequest, OrderStatus, OrderSummary } from './types';
+import { Order, PlaceOrderRequest, OrderStatus, OrderSummary, CancelAndReassignResponse, WaitTimeEstimate, SetPrepTimeRequest } from './types';
 
 // Orders API Functions
 export const ordersApi = {
@@ -68,14 +68,56 @@ export const ordersApi = {
     return apiClient.post<Order>(`/orders/${orderId}/status?new_status=${status}`, {});
   },
 
+  /**
+   * Get wait time estimate for an order
+   */
+  async getWaitTime(orderId: number): Promise<{ data?: WaitTimeEstimate; error?: string }> {
+    return apiClient.get<WaitTimeEstimate>(`/orders/${orderId}/wait-time`);
+  },
 
-
+  /**
+   * Set estimated preparation time for an order (Staff/Owner only)
+   */
+  async setPrepTime(orderId: number, prepMinutes: number): Promise<{ data?: Order; error?: string }> {
+    const body: SetPrepTimeRequest = { estimated_prep_minutes: prepMinutes };
+    return apiClient.patch<Order>(`/orders/${orderId}/prep-time`, body);
+  },
   
   /**
    * Get order tracking information
    */
   async trackOrder(orderId: number): Promise<{ data?: any; error?: string }> {
     return apiClient.get(`/orders/${orderId}/track`);
+  },
+
+  /**
+   * Cancel current driver assignment and reassign to another driver (Staff/Owner only)
+   */
+  async cancelAndReassignDriver(orderId: number): Promise<{ data?: CancelAndReassignResponse; error?: string }> {
+    return apiClient.post<CancelAndReassignResponse>(`/orders/${orderId}/cancel-and-reassign`, {});
+  },
+
+  /**
+   * Retry driver assignment - works for both unassigned and assigned orders (Staff/Owner only)
+   * - If no driver: Assigns nearest idle driver
+   * - If has driver: Reassigns to different driver
+   */
+  async retryDriverAssignment(orderId: number): Promise<{ data?: CancelAndReassignResponse; error?: string }> {
+    return apiClient.post<CancelAndReassignResponse>(`/orders/${orderId}/retry-assignment`, {});
+  },
+
+  /**
+   * Assign a specific driver to an order (Staff/Owner only)
+   */
+  async assignSpecificDriver(orderId: number, driverId: number): Promise<{ data?: Order; error?: string }> {
+    return apiClient.post<Order>(`/orders/${orderId}/assign-driver`, { driver_id: driverId });
+  },
+
+  /**
+   * Auto-assign nearest idle driver to an order (Staff/Owner only)
+   */
+  async autoAssignDriver(orderId: number): Promise<{ data?: Order; error?: string }> {
+    return apiClient.post<Order>(`/orders/${orderId}/assign-driver`, {});
   },
 };
 
@@ -88,6 +130,12 @@ export const {
   cancelOrder,
   getCafeOrders,
   updateOrderStatus,
+  getWaitTime,
+  setPrepTime,
   trackOrder,
+  cancelAndReassignDriver,
+  retryDriverAssignment,
+  assignSpecificDriver,
+  autoAssignDriver,
 } = ordersApi;
 
