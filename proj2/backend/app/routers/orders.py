@@ -313,9 +313,18 @@ def assign_driver(order_id: int, assignment: AssignDriverRequest = None, db: Ses
     # Check permissions
     require_cafe_staff_or_owner(order.cafe_id, db, current)
     
-    # Check if order already has a driver
+    # If order already has a driver, unassign them first (allow reassignment)
     if order.driver_id:
-        raise HTTPException(status_code=400, detail="Order already has a driver assigned")
+        # If manual assignment to the SAME driver, just return
+        if assignment and assignment.driver_id and assignment.driver_id == order.driver_id:
+            return order
+
+        from ..services.driver import update_driver_status_to_idle
+        update_driver_status_to_idle(order.driver_id, db)
+        order.driver_id = None
+        db.add(order)
+        db.commit()
+        db.refresh(order)
     
     # Check if order status allows driver assignment
     if order.status not in [OrderStatus.ACCEPTED, OrderStatus.READY]:
@@ -430,11 +439,6 @@ def set_order_prep_time(
     db.refresh(order)
     
     return order
-
-
-# ============ Driver Assignment/Reassignment Endpoints ============
-
-@router.post("/{order_id}/retry-assignment", response_model=CancelAndReassignResponse)
 def retry_driver_assignment(
     order_id: int,
     db: Session = Depends(get_db),

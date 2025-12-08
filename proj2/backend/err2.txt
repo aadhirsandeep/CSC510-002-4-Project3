@@ -1,0 +1,10 @@
+DB URI in use: sqlite:///./app.db
+Traceback (most recent call last):
+  File "C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\verify_fix.py", line 3, in <module>
+    from app.main import app
+  File "C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\app\main.py", line 20, in <module>
+    from .routers import orders as orders_router
+  File "C:\Users\saha_\Desktop\CSC 510\CSC510-002-4-Project3\proj2\backend\app\routers\orders.py", line 456
+    """
+    ^
+SyntaxError: unterminated triple-quoted string literal (detected at line 536)
