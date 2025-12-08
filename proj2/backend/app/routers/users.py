@@ -9,9 +9,10 @@
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime
 from ..database import get_db
 from ..schemas import UserCreate, UserOut
-from ..models import User, Role
+from ..models import User, Role, DriverLocation, DriverStatus
 from ..auth import hash_password
 from ..deps import get_current_user
 
@@ -29,7 +30,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         "STAFF": Role.STAFF,
         "DRIVER": Role.DRIVER
     }
-    user = User(email=data.email, name=data.name, hashed_password=hash_password(data.password), 
+    user = User(email=data.email, name=data.name, hashed_password=hash_password(data.password),
                 role=roleMap[data.role],
                 dob=data.dob,
                 weight_kg=data.weight_kg,
@@ -40,6 +41,18 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     print("SAVED activity_level =", user.activity_level)  # debug
+
+    # If registering as a driver, create a default location with IDLE status
+    if roleMap[data.role] == Role.DRIVER:
+        default_location = DriverLocation(
+            driver_id=user.id,
+            lat=0.0,  # Default coordinates - driver should update this when they log in
+            lng=0.0,
+            status=DriverStatus.IDLE,
+            timestamp=datetime.utcnow()
+        )
+        db.add(default_location)
+        db.commit()
 
     return user
 

@@ -105,6 +105,20 @@ export const ordersApi = {
   async retryDriverAssignment(orderId: number): Promise<{ data?: CancelAndReassignResponse; error?: string }> {
     return apiClient.post<CancelAndReassignResponse>(`/orders/${orderId}/retry-assignment`, {});
   },
+
+  /**
+   * Assign a specific driver to an order (Staff/Owner only)
+   */
+  async assignSpecificDriver(orderId: number, driverId: number): Promise<{ data?: Order; error?: string }> {
+    return apiClient.post<Order>(`/orders/${orderId}/assign-driver`, { driver_id: driverId });
+  },
+
+  /**
+   * Auto-assign nearest idle driver to an order (Staff/Owner only)
+   */
+  async autoAssignDriver(orderId: number): Promise<{ data?: Order; error?: string }> {
+    return apiClient.post<Order>(`/orders/${orderId}/assign-driver`, {});
+  },
 };
 
 // Export individual functions for convenience
@@ -121,5 +135,7 @@ export const {
   trackOrder,
   cancelAndReassignDriver,
   retryDriverAssignment,
+  assignSpecificDriver,
+  autoAssignDriver,
 } = ordersApi;
 

@@ -32,6 +32,7 @@ import { Textarea } from '../ui/textarea';
 import { Clock, CheckCircle, XCircle, Package, TrendingUp, User, DollarSign, AlertCircle } from 'lucide-react';
 import { Order, OrderStatus, Refund } from '../../api/types';
 import { ordersApi } from '../../api';
+import { driversApi, IdleDriverInfo } from '../../api/drivers';
 import { refundsApi } from '../../api/refunds';
 import { toast } from 'sonner';
 import { useAuth } from '../../contexts/AuthContext';
@@ -55,6 +56,12 @@ const StaffOrdersView: React.FC = () => {
   const [rejectionReason, setRejectionReason] = useState('');
   const [notes, setNotes] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [selectedOrder, setSelectedOrder] = useState<OrderSummary | null>(null);
+  const [isOrderDialogOpen, setIsOrderDialogOpen] = useState(false);
+  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
+  const [availableDrivers, setAvailableDrivers] = useState<IdleDriverInfo[]>([]);
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
+  const [assigningDriver, setAssigningDriver] = useState(false);
 
   useEffect(() => {
     if (user?.cafe?.id) {
@@ -117,6 +124,104 @@ const StaffOrdersView: React.FC = () => {
   const acceptOrder = (orderId: number) => updateOrderStatus(orderId, 'ACCEPTED');
   const declineOrder = (orderId: number) => updateOrderStatus(orderId, 'DECLINED');
   const markReady = (orderId: number) => updateOrderStatus(orderId, 'READY');
+
+  const loadAvailableDrivers = async () => {
+    const { data, error } = await driversApi.getAvailableDrivers();
+    if (data) {
+      setAvailableDrivers(data);
+    } else if (error) {
+      console.error('Failed to load available drivers:', error);
+    }
+  };
+
+  const viewOrderDetails = async (orderId: number) => {
+    setLoadingOrderDetails(true);
+    setSelectedDriverId(''); // Reset driver selection
+
+    const { data, error } = await ordersApi.getOrderSummary(orderId);
+
+    if (error) {
+      toast.error(`Failed to load order details: ${error}`);
+      setLoadingOrderDetails(false);
+      return;
+    }
+
+    if (data) {
+      setSelectedOrder(data);
+      setIsOrderDialogOpen(true);
+      // Load available drivers when opening dialog
+      await loadAvailableDrivers();
+    }
+
+    setLoadingOrderDetails(false);
+  };
+
+  const reassignDriver = async (orderId: number) => {
+    const { data, error } = await ordersApi.retryDriverAssignment(orderId);
+
+    if (error) {
+      toast.error(`Failed to reassign driver: ${error}`);
+      return;
+    }
+
+    if (data) {
+      toast.success(data.message || 'Driver reassigned successfully');
+      await loadOrders();
+      // Refresh order details if the dialog is open
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+  };
+
+  const assignSpecificDriver = async (orderId: number) => {
+    if (!selectedDriverId) {
+      toast.error('Please select a driver');
+      return;
+    }
+
+    setAssigningDriver(true);
+    const { data, error } = await ordersApi.assignSpecificDriver(orderId, parseInt(selectedDriverId));
+
+    if (error) {
+      toast.error(`Failed to assign driver: ${error}`);
+      setAssigningDriver(false);
+      return;
+    }
+
+    if (data) {
+      toast.success('Driver assigned successfully');
+      await loadOrders();
+      // Refresh order details
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+
+    setAssigningDriver(false);
+  };
+
+  const autoAssignDriver = async (orderId: number) => {
+    setAssigningDriver(true);
+    const { data, error } = await ordersApi.autoAssignDriver(orderId);
+
+    if (error) {
+      toast.error(`Failed to auto-assign driver: ${error}`);
+      setAssigningDriver(false);
+      return;
+    }
+
+    if (data) {
+      toast.success('Driver auto-assigned successfully');
+      await loadOrders();
+      // Refresh order details
+      if (selectedOrder && selectedOrder.id === orderId) {
+        await viewOrderDetails(orderId);
+      }
+    }
+
+    setAssigningDriver(false);
+  };
 
   // Refund management functions
   const loadRefunds = async () => {
@@ -252,6 +357,12 @@ const StaffOrdersView: React.FC = () => {
               <Clock className="h-4 w-4" />
               {new Date(order.created_at).toLocaleTimeString()}
             </span>
+            {order.driver_id && (
+              <span className="flex items-center gap-1">
+                <Truck className="h-4 w-4" />
+                Driver #{order.driver_id}
+              </span>
+            )}
           </div>
         </CardDescription>
       </CardHeader>
@@ -274,17 +385,59 @@ const StaffOrdersView: React.FC = () => {
             <XCircle className="h-4 w-4 mr-2" />
             Decline
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => viewOrderDetails(order.id)}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            View
+          </Button>
         </CardFooter>
       )}
       {showActions && order.status === 'ACCEPTED' && (
-        <CardFooter>
+        <CardFooter className="gap-2">
           <Button
             onClick={() => markReady(order.id)}
             disabled={processingOrderId === order.id}
-            className="w-full"
+            className="flex-1"
           >
             <Package className="h-4 w-4 mr-2" />
             {processingOrderId === order.id ? 'Processing...' : 'Mark as Ready'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => viewOrderDetails(order.id)}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            View
+          </Button>
+        </CardFooter>
+      )}
+      {showActions && order.status === 'READY' && (
+        <CardFooter className="gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => viewOrderDetails(order.id)}
+            className="flex-1"
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            View Details
+          </Button>
+        </CardFooter>
+      )}
+      {!showActions && (
+        <CardFooter>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => viewOrderDetails(order.id)}
+            className="w-full"
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            View Details
           </Button>
         </CardFooter>
       )}
@@ -600,6 +753,177 @@ const StaffOrdersView: React.FC = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* Order Details Dialog */}
+      <Dialog open={isOrderDialogOpen} onOpenChange={setIsOrderDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Order #{selectedOrder?.id} Details</DialogTitle>
+            <DialogDescription>
+              {selectedOrder && getStatusBadge(selectedOrder.status)}
+            </DialogDescription>
+          </DialogHeader>
+
+          {loadingOrderDetails ? (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">Loading order details...</p>
+            </div>
+          ) : selectedOrder ? (
+            <div className="space-y-6">
+              {/* Order Summary */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg">Order Information</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Order ID</p>
+                    <p className="font-medium">#{selectedOrder.id}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <div className="mt-1">{getStatusBadge(selectedOrder.status)}</div>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Price</p>
+                    <p className="font-medium">${selectedOrder.total_price.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Total Calories</p>
+                    <p className="font-medium">{selectedOrder.total_calories} cal</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-muted-foreground">Created At</p>
+                    <p className="font-medium">{new Date(selectedOrder.created_at).toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Driver Information */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg flex items-center gap-2">
+                  <Truck className="h-5 w-5" />
+                  Driver Information
+                </h3>
+                {selectedOrder.driver_info ? (
+                  <div className="bg-muted p-4 rounded-lg space-y-2">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground">Driver ID</p>
+                        <p className="font-medium">#{selectedOrder.driver_info.driver_id}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground">Driver Email</p>
+                        <p className="font-medium">{selectedOrder.driver_info.driver_email}</p>
+                      </div>
+                    </div>
+                    {['ACCEPTED', 'READY'].includes(selectedOrder.status) && (
+                      <div className="space-y-3 mt-2">
+                        <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a different driver..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDrivers.map(driver => (
+                              <SelectItem key={driver.driver_id} value={driver.driver_id.toString()}>
+                                {driver.driver_name} ({driver.driver_email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => assignSpecificDriver(selectedOrder.id)}
+                            disabled={!selectedDriverId || assigningDriver}
+                            className="flex-1"
+                          >
+                            <Truck className="h-4 w-4 mr-2" />
+                            Assign Selected
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => autoAssignDriver(selectedOrder.id)}
+                            disabled={assigningDriver}
+                            className="flex-1"
+                          >
+                            <Shuffle className="h-4 w-4 mr-2" />
+                            Auto-Assign
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-muted p-4 rounded-lg">
+                    <p className="text-sm text-muted-foreground">No driver assigned yet</p>
+                    {['ACCEPTED', 'READY'].includes(selectedOrder.status) && (
+                      <div className="space-y-3 mt-2">
+                        <Select value={selectedDriverId} onValueChange={setSelectedDriverId}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select a driver..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableDrivers.map(driver => (
+                              <SelectItem key={driver.driver_id} value={driver.driver_id.toString()}>
+                                {driver.driver_name} ({driver.driver_email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => assignSpecificDriver(selectedOrder.id)}
+                            disabled={!selectedDriverId || assigningDriver}
+                            className="flex-1"
+                          >
+                            <Truck className="h-4 w-4 mr-2" />
+                            Assign Selected
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => autoAssignDriver(selectedOrder.id)}
+                            disabled={assigningDriver}
+                            className="flex-1"
+                          >
+                            <Shuffle className="h-4 w-4 mr-2" />
+                            Auto-Assign
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Order Items */}
+              <div className="space-y-2">
+                <h3 className="font-semibold text-lg">Order Items</h3>
+                <div className="space-y-2">
+                  {selectedOrder.items && selectedOrder.items.length > 0 ? (
+                    selectedOrder.items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-3 bg-muted rounded-lg">
+                        <div>
+                          <p className="font-medium">{item.name}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Quantity: {item.quantity} • {item.subtotal_calories} cal
+                          </p>
+                        </div>
+                        <p className="font-semibold">${item.subtotal_price.toFixed(2)}</p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No items found</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

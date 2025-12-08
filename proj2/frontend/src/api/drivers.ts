@@ -67,8 +67,23 @@ export const driversApi = {
     return apiClient.post(`/drivers/${driverId}/location`, location);
   },
 
+  // Get available (idle) drivers
+  async getAvailableDrivers() {
+    return apiClient.get<IdleDriverInfo[]>('/drivers/available');
+  },
+
   // WebSocket connection
   getWebSocketUrl(driverId: number) {
     return `ws://${window.location.host}/drivers/driver/${driverId}/ws`;
   }
 };
+
+export interface IdleDriverInfo {
+  driver_id: number;
+  driver_name: string;
+  driver_email: string;
+  lat: number;
+  lng: number;
+  status: string;
+  last_update: string;
+}
