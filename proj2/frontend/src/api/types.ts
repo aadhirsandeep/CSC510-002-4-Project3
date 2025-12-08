@@ -235,6 +235,14 @@ export interface OrderSummary {
 export interface PlaceOrderRequest {
   cafe_id: number;
 }
+
+export interface CancelAndReassignResponse {
+  order_id: number;
+  previous_driver_id: number | null;
+  new_driver_id: number | null;
+  new_driver_email: string | null;
+  message: string;
+}
 // Goal Types
 export interface CalorieGoal {
   id: number;
@@ -379,4 +387,37 @@ export interface OrderIssueCreate {
   issue_type: IssueType;
   description?: string;
   request_refund?: boolean;
+}
+// Wait Time Tracking Types
+export interface WaitTimeEstimate {
+  order_id: number;
+  status: OrderStatus;
+  
+  // Preparation phase timing
+  prep_started_at?: string | null;
+  estimated_prep_minutes?: number | null;
+  prep_remaining_minutes?: number | null;
+  prep_elapsed_minutes?: number | null;
+  
+  // Delivery phase timing
+  ready_at?: string | null;
+  picked_up_at?: string | null;
+  estimated_delivery_minutes?: number | null;
+  delivery_remaining_minutes?: number | null;
+  
+  // Driver location (if in transit)
+  driver_lat?: number | null;
+  driver_lng?: number | null;
+  driver_distance_km?: number | null;
+  
+  // Overall estimates
+  total_estimated_minutes?: number | null;
+  estimated_completion_time?: string | null;
+  
+  // Metadata
+  updated_at: string;
+}
+
+export interface SetPrepTimeRequest {
+  estimated_prep_minutes: number;
 }

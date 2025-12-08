@@ -49,41 +49,51 @@ def get_latest_driver_location(driver_id: int, db: Session) -> DriverLocation | 
         DriverLocation.driver_id == driver_id
     ).order_by(DriverLocation.timestamp.desc()).first()
 
-def find_nearest_idle_driver(cafe_lat: float, cafe_lng: float, db: Session) -> tuple[User, float] | None:
+def find_nearest_idle_driver(cafe_lat: float, cafe_lng: float, db: Session, exclude_driver_id: int | None = None) -> tuple[User, float] | None:
     """
     Find the nearest idle driver to a cafe location.
     Returns (driver_user, distance_in_km) or None if no idle drivers found.
+
+    Args:
+        cafe_lat: Cafe latitude
+        cafe_lng: Cafe longitude
+        db: Database session
+        exclude_driver_id: Optional driver ID to exclude from search (e.g., previous driver)
     """
     # Get all drivers
     drivers = db.query(User).filter(User.role == Role.DRIVER).all()
-    
+
     if not drivers:
         return None
-    
+
     nearest_driver = None
     min_distance = float('inf')
-    
+
     for driver in drivers:
+        # Skip excluded driver
+        if exclude_driver_id and driver.id == exclude_driver_id:
+            continue
+
         # Get the latest location for this driver
         latest_location = get_latest_driver_location(driver.id, db)
-        
+
         if not latest_location:
             continue
-        
+
         # Check if driver is idle
         if latest_location.status != DriverStatus.IDLE:
             continue
-        
+
         # Calculate distance
         distance = calculate_distance(cafe_lat, cafe_lng, latest_location.lat, latest_location.lng)
-        
+
         if distance < min_distance:
             min_distance = distance
             nearest_driver = driver
-    
+
     if nearest_driver is None:
         return None
-    
+
     return (nearest_driver, min_distance)
 
 def get_driver_current_location(driver_id: int, db: Session) -> DriverLocation | None:

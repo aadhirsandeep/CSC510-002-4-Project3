@@ -12,6 +12,7 @@
  * @description Real-time order tracking UI. Polls the backend for order
  * status, maps status to progress steps, and fetches the restaurant/cafe
  * details (name/address/phone) to display contact and ETA information.
+ * Now includes live wait time tracking with dynamic ETA updates.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -25,6 +26,7 @@ import { Clock, MapPin, Phone, CheckCircle, Circle, ArrowLeft } from 'lucide-rea
 import { Order as ApiOrder, OrderStatus, User, Cafe } from '../../api/types';
 import { getMyOrders } from '../../api/orders';
 import { getCafe as getCafeApi } from '../../api/cafes';
+import WaitTimeTracker from './WaitTimeTracker';
 
 interface OrderTrackingProps {
   user?: User;
@@ -429,6 +431,14 @@ const OrderTracking: React.FC<OrderTrackingProps> = ({ user }) => {
               </div>
             </CardContent>
           </Card>
+
+          {/* Live Wait Time Tracker */}
+          {order.status !== 'cancelled' && order.status !== 'declined' && (
+            <WaitTimeTracker 
+              orderId={parseInt(order.id)} 
+              pollInterval={10000}
+            />
+          )}
 
           <div className="space-y-2">
               {/* Review flow omitted for now */}

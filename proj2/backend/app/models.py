@@ -147,6 +147,13 @@ class Order(Base):
     pickup_code = Column(String, nullable=True)
     total_price = Column(Float, default=0.0)
     total_calories = Column(Integer, default=0)
+    # Wait time tracking fields
+    estimated_prep_minutes = Column(Integer, nullable=True)  # Cafe sets this when accepting
+    prep_started_at = Column(DateTime, nullable=True)  # Set when status -> ACCEPTED
+    ready_at = Column(DateTime, nullable=True)  # Set when status -> READY
+    picked_up_at = Column(DateTime, nullable=True)  # Set when status -> PICKED_UP
+    delivered_at = Column(DateTime, nullable=True)  # Set when status -> DELIVERED
+    estimated_delivery_minutes = Column(Integer, nullable=True)  # Calculated from driver distance
 
 class OrderItem(Base):
     """OrderItem model representing an individual item within an order."""

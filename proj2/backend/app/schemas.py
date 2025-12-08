@@ -213,6 +213,14 @@ class AssignDriverRequest(BaseModel):
     """Schema for assigning a driver to an order (auto-assign if driver_id is None)."""
     driver_id: Optional[int] = None  # If None, auto-assign nearest driver
 
+class CancelAndReassignResponse(BaseModel):
+    """Schema for cancel and reassign order response."""
+    order_id: int
+    previous_driver_id: Optional[int]
+    new_driver_id: Optional[int]
+    new_driver_email: Optional[str]
+    message: str
+
 class IdleDriverInfo(BaseModel):
     """Schema for idle driver information."""
     driver_id: int
@@ -408,3 +416,41 @@ class OrderIssueResolve(BaseModel):
     resolution_notes: Optional[str] = None
     refund_approved: bool = False
     refund_amount: Optional[float] = None
+
+# Wait Time Tracking Schemas
+class WaitTimeEstimate(BaseModel):
+    """Schema for live wait time estimate for an order."""
+    order_id: int
+    status: OrderStatus
+    
+    # Preparation phase timing
+    prep_started_at: Optional[datetime] = None
+    estimated_prep_minutes: Optional[int] = None
+    prep_remaining_minutes: Optional[int] = None
+    prep_elapsed_minutes: Optional[int] = None
+    
+    # Delivery phase timing
+    ready_at: Optional[datetime] = None
+    picked_up_at: Optional[datetime] = None
+    estimated_delivery_minutes: Optional[int] = None
+    delivery_remaining_minutes: Optional[int] = None
+    
+    # Driver location (if in transit)
+    driver_lat: Optional[float] = None
+    driver_lng: Optional[float] = None
+    driver_distance_km: Optional[float] = None
+    
+    # Overall estimates
+    total_estimated_minutes: Optional[int] = None
+    estimated_completion_time: Optional[datetime] = None
+    
+    # Metadata
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class SetPrepTimeRequest(BaseModel):
+    """Schema for cafe to set estimated preparation time."""
+    estimated_prep_minutes: int
