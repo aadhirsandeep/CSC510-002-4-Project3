@@ -122,11 +122,19 @@ class OrderOut(BaseModel):
     """Schema for order data returned in API responses."""
     id: int
     cafe_id: int
+    driver_id: Optional[int] = None
     status: OrderStatus
     created_at: datetime
     total_price: float
     total_calories: int
     can_cancel_until: datetime
+    pickup_code: Optional[str] = None
+    estimated_prep_minutes: Optional[int] = None
+    prep_started_at: Optional[datetime] = None
+    ready_at: Optional[datetime] = None
+    picked_up_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    estimated_delivery_minutes: Optional[int] = None
     class Config:
         from_attributes = True
 

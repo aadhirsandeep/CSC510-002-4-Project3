@@ -200,11 +200,19 @@ export type OrderStatus = 'PENDING' | 'ACCEPTED' | 'DECLINED' | 'READY' | 'PICKE
 export interface Order {
   id: number;
   cafe_id: number;
+  driver_id?: number | null;
   status: OrderStatus;
   created_at: string;
   total_price: number;
   total_calories: number;
   can_cancel_until: string;
+  pickup_code?: string | null;
+  estimated_prep_minutes?: number | null;
+  prep_started_at?: string | null;
+  ready_at?: string | null;
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
+  estimated_delivery_minutes?: number | null;
 }
 
 // Add these new types for order summaries
